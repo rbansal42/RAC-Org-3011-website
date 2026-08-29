@@ -134,13 +134,13 @@ export default function PresidentModal({
                   onChange={(e) => setInitCategory(e.target.value)}
                   style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #E4E4E7', outline: 'none' }}
                 >
-                  <option value="Disease Prevention & Health">Disease Prevention & Health</option>
-                  <option value="Basic Education & Literacy">Basic Education & Literacy</option>
-                  <option value="Environment & Sustainability">Environment & Sustainability</option>
-                  <option value="Water, Sanitation & Hygiene">Water, Sanitation & Hygiene</option>
-                  <option value="Maternal & Child Health">Maternal & Child Health</option>
-                  <option value="Economic & Community Dev">Economic & Community Dev</option>
-                  <option value="Peacebuilding">Peacebuilding</option>
+                  <option value="Peacebuilding and conflict prevention">Peacebuilding and conflict prevention</option>
+                  <option value="Disease prevention and treatment">Disease prevention and treatment</option>
+                  <option value="Water, sanitation, and hygiene (WASH)">Water, sanitation, and hygiene (WASH)</option>
+                  <option value="Maternal and child health">Maternal and child health</option>
+                  <option value="Basic education and literacy">Basic education and literacy</option>
+                  <option value="Community economic development">Community economic development</option>
+                  <option value="Supporting the environment">Supporting the environment</option>
                 </select>
               </div>
 

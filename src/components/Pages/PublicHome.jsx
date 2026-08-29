@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DISTRICT_INFO, ROTARY_FOCUS_AREAS, IMPACT_METRICS } from '../../data/districtData';
-import { ArrowRight, MapPin, Sparkles, Award, Heart, CheckCircle2, Shield, LogIn, Calculator, UserPlus, Send, X, Globe, Layers, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowRight, ArrowUp, ArrowDown, MapPin, Sparkles, Award, Heart, CheckCircle2, Shield, LogIn, Calculator, UserPlus, Send, X, Globe, Layers, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
 import rotaryWheelImg from '../../../images.png';
 import InteractiveDotGrid from '../Layout/InteractiveDotGrid';
 import Footer from '../Layout/Footer';
@@ -408,12 +408,29 @@ function ExpandingCarousel() {
   );
 }
 
-export default function PublicHome({ onNavigateDistrict, onOpenLoginModal }) {
+export default function PublicHome({ onNavigateDistrict, onNavigatePage, onOpenLoginModal }) {
   const containerRef = useRef(null);
   const isScrolling = useRef(false);
   const currentSectionRef = useRef(0);
   const lastScrollTime = useRef(0);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [scrollProgress, setScrollProgress] = useState(0);
+
+  const handleScrollToTop = () => {
+    if (containerRef.current) {
+      containerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleScrollToBottom = () => {
+    if (containerRef.current) {
+      containerRef.current.scrollTo({ top: containerRef.current.scrollHeight, behavior: 'smooth' });
+    } else {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -943,15 +960,94 @@ export default function PublicHome({ onNavigateDistrict, onOpenLoginModal }) {
         <Footer
           isFullScreen={false}
           onNavigatePage={(page) => {
-            if (page === 'district' && onNavigateDistrict) {
+            if (onNavigatePage) {
+              onNavigatePage(page);
+            } else if (page === 'district' && onNavigateDistrict) {
               onNavigateDistrict();
             } else if (page === 'home') {
-              if (containerRef.current) {
-                containerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-              }
+              handleScrollToTop();
             }
           }}
         />
+      </div>
+
+      {/* Floating Home Quick-Scroll Navigator (Go to Top & Go to Bottom) */}
+      <div
+        style={{
+          position: 'fixed',
+          right: isMobile ? '12px' : '24px',
+          bottom: isMobile ? '16px' : '28px',
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px'
+        }}
+      >
+        <button
+          onClick={handleScrollToTop}
+          style={{
+            width: isMobile ? '40px' : '46px',
+            height: isMobile ? '40px' : '46px',
+            borderRadius: '50%',
+            backgroundColor: 'rgba(255, 255, 255, 0.92)',
+            backdropFilter: 'blur(12px)',
+            border: '1.5px solid rgba(216, 27, 96, 0.35)',
+            color: 'var(--rotaract-pink)',
+            boxShadow: '0 8px 24px rgba(216, 27, 96, 0.25)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-3px) scale(1.08)';
+            e.currentTarget.style.backgroundColor = 'var(--rotaract-pink)';
+            e.currentTarget.style.color = '#FFFFFF';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0) scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.92)';
+            e.currentTarget.style.color = 'var(--rotaract-pink)';
+          }}
+          title="Go to Top of Homepage"
+          aria-label="Go to Top"
+        >
+          <ArrowUp size={isMobile ? 18 : 22} />
+        </button>
+
+        <button
+          onClick={handleScrollToBottom}
+          style={{
+            width: isMobile ? '40px' : '46px',
+            height: isMobile ? '40px' : '46px',
+            borderRadius: '50%',
+            backgroundColor: 'rgba(255, 255, 255, 0.92)',
+            backdropFilter: 'blur(12px)',
+            border: '1.5px solid rgba(216, 27, 96, 0.35)',
+            color: 'var(--rotaract-pink)',
+            boxShadow: '0 8px 24px rgba(216, 27, 96, 0.25)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(3px) scale(1.08)';
+            e.currentTarget.style.backgroundColor = 'var(--rotaract-pink)';
+            e.currentTarget.style.color = '#FFFFFF';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0) scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.92)';
+            e.currentTarget.style.color = 'var(--rotaract-pink)';
+          }}
+          title="Go to Bottom of Homepage"
+          aria-label="Go to Bottom"
+        >
+          <ArrowDown size={isMobile ? 18 : 22} />
+        </button>
       </div>
 
       {isJoinModalOpen && (

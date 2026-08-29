@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, ShieldCheck, Lock, User, Mail, CheckCircle2, KeyRound, ShieldAlert, Smartphone, Clock, RefreshCw, QrCode, Copy, Eye, EyeOff } from 'lucide-react';
 import { dbService } from '../../lib/supabaseClient';
-import { getSecretForRotaryId, verifyTOTP, generateRandomBase32Secret } from '../../lib/totp';
+import { verifyTOTP, generateRandomBase32Secret } from '../../lib/totp';
 import { requestSecurePasswordReset } from '../../lib/emailService';
 
 export default function LoginModal({ onClose, onLoginSuccess }) {
@@ -100,13 +100,19 @@ export default function LoginModal({ onClose, onLoginSuccess }) {
       return;
     }
 
-    if (rawRole !== 'officer' && rawRole !== 'president') {
+    if (rawRole !== 'officer' && rawRole !== 'president' && rawRole !== 'secretary') {
       setErrorMessage('Access Denied: Account role unauthorized for portal access.');
       return;
     }
 
     const assignedRole = rawRole;
     const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+    
+    // Generate cryptographically secure session token
+    const tokenBytes = new Uint8Array(24);
+    window.crypto.getRandomValues(tokenBytes);
+    const secureToken = Array.from(tokenBytes, b => b.toString(16).padStart(2, '0')).join('');
+
     onLoginSuccess({
       rotaryId: authenticatedUser.rotaryId,
       email: authenticatedUser.email,
@@ -117,7 +123,7 @@ export default function LoginModal({ onClose, onLoginSuccess }) {
       mfaVerified: true,
       createdAt: Date.now(),
       expiresAt: Date.now() + FIVE_HOURS_MS,
-      sessionToken: `sec_jwt_${Math.random().toString(36).substring(2)}`
+      sessionToken: `sec_${secureToken}`
     });
     onClose();
   };
@@ -213,7 +219,8 @@ export default function LoginModal({ onClose, onLoginSuccess }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '20px'
+        padding: '16px',
+        overflowY: 'auto'
       }}
     >
       <div 
@@ -221,13 +228,16 @@ export default function LoginModal({ onClose, onLoginSuccess }) {
         style={{
           width: '100%',
           maxWidth: '480px',
-          padding: '36px',
+          maxHeight: 'min(92vh, 660px)',
+          overflowY: 'auto',
+          padding: '28px 32px',
           position: 'relative',
           border: '2px solid var(--rotaract-pink)',
           animation: 'fadeInUp 0.3s ease-out forwards',
           boxShadow: '0 20px 60px rgba(216, 27, 96, 0.25)',
           backgroundColor: '#FFFFFF',
-          borderRadius: '24px'
+          borderRadius: '24px',
+          boxSizing: 'border-box'
         }}
       >
         <button
@@ -510,7 +520,7 @@ export default function LoginModal({ onClose, onLoginSuccess }) {
                   <div style={{ position: 'relative' }}>
                     <input
                       type="text"
-                      placeholder="e.g. 10482950 or techrid3011@gmail.com"
+                      placeholder="e.g. 10482950 or president@rotaract3011.org"
                       required
                       value={forgotInput}
                       onChange={(e) => setForgotInput(e.target.value)}

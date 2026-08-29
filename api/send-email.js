@@ -2,7 +2,7 @@
  * Vercel Serverless Function: /api/send-email
  * District 3011 Secure Email Proxy (Powered by Resend)
  *
- * This runs on the server — the RESEND_API_KEY never reaches the browser.
+ * Runs exclusively on the server — RESEND_API_KEY never reaches the browser.
  * Client calls POST /api/send-email with { type, payload }
  */
 
@@ -10,68 +10,118 @@ const FROM_ADDRESS = 'District 3011 Portal <portal@rotaract3011.org>';
 const FALLBACK_FROM = 'District 3011 Portal <onboarding@resend.dev>';
 const RESEND_API = 'https://api.resend.com/emails';
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 async function sendViaResend({ to, subject, html, text }) {
   const apiKey = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;
   if (!apiKey) {
-    return { success: false, error: 'RESEND_API_KEY environment variable not set on server.' };
+    return { success: false, error: 'RESEND_API_KEY environment variable not configured on server.' };
   }
 
-  const recipients = Array.isArray(to) ? to : [to];
+  const recipients = Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
+  if (recipients.length === 0) {
+    return { success: false, error: 'No recipient email addresses provided.' };
+  }
 
-  try {
-    let res = await fetch(RESEND_API, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        from: FROM_ADDRESS,
-        to: recipients,
-        subject,
-        html,
-        text
-      })
-    });
-
-    let data = await res.json();
-
-    // If custom domain fails or is not verified on Resend, retry with onboarding@resend.dev
-    if (!res.ok) {
-      console.warn('[send-email] Retrying with fallback sender onboarding@resend.dev due to notice:', data);
-      res = await fetch(RESEND_API, {
+  // If single recipient, send standard email
+  if (recipients.length === 1) {
+    try {
+      const res = await fetch(RESEND_API, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          from: FALLBACK_FROM,
+          from: FROM_ADDRESS,
           to: recipients,
           subject,
           html,
           text
         })
       });
-      data = await res.json();
+      const data = await res.json();
+      if (res.ok) {
+        return { success: true, count: 1, id: data.id };
+      }
+      return { success: false, error: data.message || 'Resend dispatch failed.' };
+    } catch (err) {
+      return { success: false, error: err.message };
     }
-
-    if (!res.ok) {
-      console.error('[send-email] Resend API error:', data);
-      return { success: false, error: data.message || 'Resend API error.' };
-    }
-
-    return { success: true, data };
-  } catch (err) {
-    console.error('[send-email] Network error:', err);
-    return { success: false, error: err.message };
   }
+
+  // If multi-recipient broadcast, use Resend official Batch API (/emails/batch) in chunks of 100 with NO limit
+  const BATCH_ENDPOINT = 'https://api.resend.com/emails/batch';
+  const chunkSize = 100;
+  let totalSent = 0;
+  let lastError = null;
+
+  for (let i = 0; i < recipients.length; i += chunkSize) {
+    const chunk = recipients.slice(i, i + chunkSize);
+    const batchPayload = chunk.map(email => ({
+      from: FROM_ADDRESS,
+      to: [email],
+      subject,
+      html,
+      text
+    }));
+
+    try {
+      const res = await fetch(BATCH_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(batchPayload)
+      });
+
+      const data = await res.json();
+      if (res.ok && data.data) {
+        totalSent += data.data.length;
+      } else {
+        console.warn('[send-email] Batch dispatch response note:', data);
+        lastError = data.message || 'Batch dispatch error';
+      }
+    } catch (err) {
+      console.error('[send-email] Batch network error:', err);
+      lastError = err.message;
+    }
+
+    if (i + chunkSize < recipients.length) {
+      await new Promise(r => setTimeout(r, 600));
+    }
+  }
+
+  if (totalSent > 0) {
+    return {
+      success: true,
+      count: totalSent,
+      notice: totalSent === recipients.length 
+        ? `Successfully dispatched to all ${totalSent} recipients.`
+        : `Dispatched to ${totalSent} of ${recipients.length} recipients.`
+    };
+  }
+
+  return { success: false, error: lastError || 'Failed to dispatch email broadcast.' };
 }
 
-// ─── Email HTML builders ──────────────────────────────────────────────────────
+// ─── Sanitized Email HTML Builders ───────────────────────────────────────────
 
 function buildFlaggedEmail({ clubName, month, flagComment }) {
-  const subject = `[Action Required] District 3011 Monthly Report Flagged — ${month}`;
+  const safeClub = escapeHtml(clubName);
+  const safeMonth = escapeHtml(month);
+  const safeComment = escapeHtml(flagComment);
+
+  const subject = `[Action Required] District 3011 Monthly Report Flagged — ${safeMonth}`;
   const html = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee;">
       <div style="background:#D81B60;padding:24px;text-align:center;color:#fff;">
@@ -79,15 +129,15 @@ function buildFlaggedEmail({ clubName, month, flagComment }) {
         <p style="margin:4px 0 0;font-size:13px;opacity:.9;">Monthly Project Reporting Studio Alert</p>
       </div>
       <div style="padding:28px;color:#333;">
-        <h2 style="color:#D81B60;font-size:18px;margin-top:0;">Action Required — ${clubName}</h2>
+        <h2 style="color:#D81B60;font-size:18px;margin-top:0;">Action Required — ${safeClub}</h2>
         <p style="font-size:15px;line-height:1.6;">Dear Club Officers,</p>
         <p style="font-size:15px;line-height:1.6;">
-          Your Monthly Project Report for <strong>${month}</strong> has been reviewed by the District Secretariat and marked as
+          Your Monthly Project Report for <strong>${safeMonth}</strong> has been reviewed by the District Secretariat and marked as
           <strong>FLAGGED / REVISION REQUIRED</strong>.
         </p>
         <div style="background:#FFF5F7;border-left:4px solid #D81B60;padding:16px;margin:20px 0;border-radius:4px;">
           <h4 style="margin:0 0 6px;color:#D81B60;font-size:13px;text-transform:uppercase;">District Officer Feedback:</h4>
-          <p style="margin:0;font-size:14px;color:#444;font-style:italic;">"${flagComment}"</p>
+          <p style="margin:0;font-size:14px;color:#444;font-style:italic;">"${safeComment}"</p>
         </div>
         <p style="font-size:14px;line-height:1.6;">
           Please log into the <strong>District 3011 Portal</strong> at
@@ -104,7 +154,13 @@ function buildFlaggedEmail({ clubName, month, flagComment }) {
 }
 
 function buildAnnouncementEmail({ title, category, author, content, audienceLabel }) {
-  const subject = `[District Announcement] ${title}`;
+  const safeTitle = escapeHtml(title);
+  const safeCat = escapeHtml(category);
+  const safeAuthor = escapeHtml(author);
+  const safeAudience = escapeHtml(audienceLabel || 'All Members & Officers');
+  const safeContent = escapeHtml(content);
+
+  const subject = `[District Announcement] ${safeTitle}`;
   const html = `
     <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
     <body style="margin:0;padding:0;background:#f4f6f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
@@ -114,23 +170,23 @@ function buildAnnouncementEmail({ title, category, author, content, audienceLabe
             <div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#FCE4EC;margin-bottom:6px;">Rotary International District 3011</div>
             <h1 style="margin:0;font-size:22px;font-weight:900;">ROTARACT DISTRICT 3011</h1>
             <div style="margin-top:8px;display:inline-block;background:rgba(255,255,255,.18);padding:4px 14px;border-radius:100px;font-size:12px;font-weight:700;">
-              Official Secretariat Broadcast • ${audienceLabel}
+              Official Secretariat Broadcast • ${safeAudience}
             </div>
           </td>
         </tr>
         <tr>
           <td style="padding:32px 28px;">
             <div style="margin-bottom:16px;">
-              <span style="background:#FFE4EC;color:#D81B60;padding:5px 12px;border-radius:100px;font-size:12px;font-weight:800;display:inline-block;">${category}</span>
-              <span style="background:#E0F2FE;color:#0284C7;padding:5px 12px;border-radius:100px;font-size:12px;font-weight:800;display:inline-block;margin-left:6px;">Audience: ${audienceLabel}</span>
+              <span style="background:#FFE4EC;color:#D81B60;padding:5px 12px;border-radius:100px;font-size:12px;font-weight:800;display:inline-block;">${safeCat}</span>
+              <span style="background:#E0F2FE;color:#0284C7;padding:5px 12px;border-radius:100px;font-size:12px;font-weight:800;display:inline-block;margin-left:6px;">Audience: ${safeAudience}</span>
             </div>
-            <h2 style="color:#111827;font-size:22px;font-weight:800;margin:0 0 12px;line-height:1.3;">${title}</h2>
+            <h2 style="color:#111827;font-size:22px;font-weight:800;margin:0 0 12px;line-height:1.3;">${safeTitle}</h2>
             <div style="font-size:13px;color:#6B7280;padding-bottom:16px;margin-bottom:20px;border-bottom:1px solid #F3F4F6;font-weight:600;">
-              Issued by <strong style="color:#D81B60;">${author}</strong> • District Secretariat 3011
+              Issued by <strong style="color:#D81B60;">${safeAuthor}</strong> • District Secretariat 3011
             </div>
-            <div style="font-size:15px;line-height:1.75;color:#374151;background:#FAFAFA;padding:22px;border-radius:12px;border-left:4px solid #D81B60;white-space:pre-wrap;margin-bottom:28px;">${content}</div>
+            <div style="font-size:15px;line-height:1.75;color:#374151;background:#FAFAFA;padding:22px;border-radius:12px;border-left:4px solid #D81B60;white-space:pre-wrap;margin-bottom:28px;">${safeContent}</div>
             <div style="text-align:center;margin:30px 0 10px;">
-              <a href="https://rotaract3011.org" target="_blank" style="background:#D81B60;color:#fff;padding:14px 28px;border-radius:100px;font-size:14px;font-weight:800;text-decoration:none;display:inline-block;box-shadow:0 4px 14px rgba(216,27,96,.35);">
+              <a href="https://rotaract3011.org/portal" target="_blank" style="background:#D81B60;color:#fff;padding:14px 28px;border-radius:100px;font-size:14px;font-weight:800;text-decoration:none;display:inline-block;box-shadow:0 4px 14px rgba(216,27,96,.35);">
                 Access Rotaract District Portal &rarr;
               </a>
             </div>
@@ -149,7 +205,10 @@ function buildAnnouncementEmail({ title, category, author, content, audienceLabe
 }
 
 function buildReminderEmail({ clubName, month }) {
-  const subject = `[Reminder] Monthly Project Report Pending for ${month}`;
+  const safeClub = escapeHtml(clubName);
+  const safeMonth = escapeHtml(month);
+
+  const subject = `[Reminder] Monthly Project Report Pending for ${safeMonth}`;
   const html = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee;">
       <div style="background:#D81B60;padding:24px;text-align:center;color:#fff;">
@@ -157,10 +216,10 @@ function buildReminderEmail({ clubName, month }) {
         <p style="margin:4px 0 0;font-size:13px;opacity:.9;">Secretariat Compliance Notice</p>
       </div>
       <div style="padding:28px;color:#333;">
-        <h2 style="color:#D81B60;font-size:18px;margin-top:0;">Reporting Notice for ${clubName}</h2>
+        <h2 style="color:#D81B60;font-size:18px;margin-top:0;">Reporting Notice for ${safeClub}</h2>
         <p style="font-size:15px;line-height:1.6;">Dear President &amp; Secretary,</p>
         <p style="font-size:15px;line-height:1.6;">
-          This is an official reminder that your club's Monthly Project Report for <strong>${month}</strong> is
+          This is an official reminder that your club's Monthly Project Report for <strong>${safeMonth}</strong> is
           currently pending submission.
         </p>
         <p style="font-size:14px;line-height:1.6;">
@@ -177,6 +236,10 @@ function buildReminderEmail({ clubName, month }) {
 }
 
 function buildPasswordResetEmail({ name, rotaryId, resetCode }) {
+  const safeName = escapeHtml(name || 'Officer');
+  const safeRotaryId = escapeHtml(rotaryId || '');
+  const safeCode = escapeHtml(resetCode);
+
   const subject = `[District 3011 Security] Password Reset Passcode`;
   const html = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee;">
@@ -186,13 +249,13 @@ function buildPasswordResetEmail({ name, rotaryId, resetCode }) {
       </div>
       <div style="padding:28px;color:#333;">
         <h2 style="color:#D81B60;font-size:18px;margin-top:0;">Password Reset Request</h2>
-        <p style="font-size:15px;line-height:1.6;">Hello ${name || 'Officer'},</p>
+        <p style="font-size:15px;line-height:1.6;">Hello ${safeName},</p>
         <p style="font-size:15px;line-height:1.6;">
-          We received a request to reset the password for your District 3011 Portal account${rotaryId ? ` (Rotary ID: <strong>${rotaryId}</strong>)` : ''}.
+          We received a request to reset the password for your District 3011 Portal account${safeRotaryId ? ` (Rotary ID: <strong>${safeRotaryId}</strong>)` : ''}.
         </p>
         <div style="background:#FFF5F7;border:1.5px solid #FECDD3;padding:20px;margin:20px 0;border-radius:12px;text-align:center;">
           <p style="margin:0 0 8px;color:#881337;font-size:13px;font-weight:700;text-transform:uppercase;">Your 6-Digit Password Reset Passcode:</p>
-          <div style="font-size:32px;font-weight:900;letter-spacing:8px;color:#D81B60;font-family:monospace;">${resetCode}</div>
+          <div style="font-size:32px;font-weight:900;letter-spacing:8px;color:#D81B60;font-family:monospace;">${safeCode}</div>
           <p style="margin:8px 0 0;font-size:12px;color:#9F1239;">Valid for 15 minutes • Do not share this code with anyone</p>
         </div>
         <p style="font-size:14px;line-height:1.6;">
@@ -210,11 +273,11 @@ function buildPasswordResetEmail({ name, rotaryId, resetCode }) {
   return { subject, html, text };
 }
 
-// ─── Main handler ─────────────────────────────────────────────────────────────
+// ─── Main Handler ─────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', 'https://rotaract3011.org');
+  // CORS configuration
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -243,7 +306,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ success: false, error: 'Missing required fields for flagged email.' });
         }
         emailContent = buildFlaggedEmail({ clubName, month, flagComment });
-        recipients = [recipientEmail || 'techrid3011@gmail.com'];
+        recipients = [recipientEmail];
         break;
       }
 
@@ -253,17 +316,17 @@ export default async function handler(req, res) {
           return res.status(400).json({ success: false, error: 'Missing required fields for announcement email.' });
         }
         emailContent = buildAnnouncementEmail({ title, category, author, content, audienceLabel });
-        recipients = r && r.length > 0 ? r : ['techrid3011@gmail.com'];
+        recipients = r && r.length > 0 ? r : [];
         break;
       }
 
       case 'reminder': {
         const { clubName, month, recipientEmail } = payload;
-        if (!clubName || !month) {
+        if (!clubName || !month || !recipientEmail) {
           return res.status(400).json({ success: false, error: 'Missing required fields for reminder email.' });
         }
         emailContent = buildReminderEmail({ clubName, month });
-        recipients = [recipientEmail || 'techrid3011@gmail.com'];
+        recipients = [recipientEmail];
         break;
       }
 
@@ -277,7 +340,7 @@ export default async function handler(req, res) {
         const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
         if (!supabaseUrl || !supabaseKey) {
-          return res.status(500).json({ success: false, error: 'Database environment variables not configured.' });
+          return res.status(500).json({ success: false, error: 'Database environment variables not configured on server.' });
         }
 
         // Call Supabase RPC initiate_server_password_reset directly on server
@@ -298,7 +361,7 @@ export default async function handler(req, res) {
 
         const userRecord = rpcData[0];
         if (!userRecord.success) {
-          return res.status(400).json({ success: false, error: userRecord.error || 'No account found.' });
+          return res.status(400).json({ success: false, error: userRecord.error || 'No registered account found.' });
         }
 
         // Build email server-side
@@ -324,7 +387,7 @@ export default async function handler(req, res) {
         // Mask email for privacy (e.g. j***@gmail.com)
         const maskedEmail = recipientEmail.replace(/^(.)(.*)(@.*)$/, (_, a, b, c) => `${a}${'*'.repeat(Math.max(b.length, 3))}${c}`);
 
-        // Return ONLY success & masked email — ZERO passcode exposure to browser DevTools
+        // Return ONLY success & masked email — ZERO passcode exposure to browser
         return res.status(200).json({
           success: true,
           maskedEmail
@@ -342,7 +405,7 @@ export default async function handler(req, res) {
       }
 
       default:
-        return res.status(400).json({ success: false, error: `Unknown email type: ${type}` });
+        return res.status(400).json({ success: false, error: `Unsupported email action: ${type}` });
     }
 
     const result = await sendViaResend({
@@ -355,7 +418,7 @@ export default async function handler(req, res) {
     return res.status(result.success ? 200 : 500).json(result);
 
   } catch (err) {
-    console.error('[send-email] Handler error:', err);
+    console.error('[send-email] Top-level handler exception:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 }

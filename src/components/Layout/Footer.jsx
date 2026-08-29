@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import DistrictLogo from './DistrictLogo';
-import { Heart, Globe, Mail, MapPin, Shield, ExternalLink, Sparkles, Award } from 'lucide-react';
+import { Heart, ExternalLink } from 'lucide-react';
 
 export default function Footer({ onNavigatePage, isFullScreen = false }) {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
@@ -45,7 +45,7 @@ export default function Footer({ onNavigatePage, isFullScreen = false }) {
       }}
     >
       <div style={{ maxWidth: '1280px', margin: '0 auto', padding: isMobile ? '0 16px' : '0 24px', width: '100%', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: isMobile ? '32px' : '40px', marginBottom: isMobile ? '32px' : '50px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.5fr 1fr', gap: isMobile ? '32px' : '60px', marginBottom: isMobile ? '32px' : '50px' }}>
           
           <div>
             <div style={{ background: 'transparent', padding: '0px', display: 'inline-block', marginBottom: '20px' }}>
@@ -119,46 +119,6 @@ export default function Footer({ onNavigatePage, isFullScreen = false }) {
                 </a>
               </li>
             </ul>
-          </div>
-
-          <div>
-            <h4 style={{ color: '#FFFFFF', fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', letterSpacing: '0.5px' }}>
-              Flagship Causes
-            </h4>
-            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '12px', color: '#A1A1AA', fontSize: '0.88rem' }}>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px', minHeight: isMobile ? '32px' : 'auto' }}>
-                <Sparkles size={14} style={{ color: 'var(--rotaract-pink)', flexShrink: 0 }} /> Mahadan 9.0 Blood Drive
-              </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px', minHeight: isMobile ? '32px' : 'auto' }}>
-                <Sparkles size={14} style={{ color: 'var(--rotaract-pink)', flexShrink: 0 }} /> Clean Yamuna &amp; Green NCR
-              </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px', minHeight: isMobile ? '32px' : 'auto' }}>
-                <Sparkles size={14} style={{ color: 'var(--rotaract-pink)', flexShrink: 0 }} /> Digital Literacy School Labs
-              </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px', minHeight: isMobile ? '32px' : 'auto' }}>
-                <Sparkles size={14} style={{ color: 'var(--rotaract-pink)', flexShrink: 0 }} /> Pediatric Health Screenings
-              </li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 style={{ color: '#FFFFFF', fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', letterSpacing: '0.5px' }}>
-              District Secretariat
-            </h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', color: '#A1A1AA', fontSize: '0.88rem' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                <MapPin size={18} style={{ color: 'var(--rotaract-pink)', flexShrink: 0, marginTop: '3px' }} />
-                <span>District Secretariat Office, Delhi NCR, India</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: isMobile ? '44px' : 'auto' }}>
-                <Mail size={18} style={{ color: 'var(--rotaract-pink)', flexShrink: 0 }} />
-                <a href="mailto:techrid3011@gmail.com" style={{ color: '#A1A1AA', textDecoration: 'none' }}>techrid3011@gmail.com</a>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: isMobile ? '44px' : 'auto' }}>
-                <Globe size={18} style={{ color: 'var(--rotaract-pink)', flexShrink: 0 }} />
-                <span>www.rotaract3011.org</span>
-              </div>
-            </div>
           </div>
 
         </div>

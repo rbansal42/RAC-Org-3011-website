@@ -299,7 +299,7 @@ export default function MorphedMenu({
                           <ArrowRight size={18} />
                         </div>
 
-                        <span style={{ color: link.active ? '#123499' : 'rgba(255, 255, 255, 0.6)', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ color: link.active ? '#FF4081' : 'rgba(255, 255, 255, 0.6)', display: 'flex', alignItems: 'center' }}>
                           {link.icon}
                         </span>
 
@@ -322,8 +322,8 @@ export default function MorphedMenu({
                               width: '6px',
                               height: '6px',
                               borderRadius: '50%',
-                              backgroundColor: '#123499',
-                              boxShadow: '0 0 10px #123499',
+                              backgroundColor: '#FF4081',
+                              boxShadow: '0 0 10px #FF4081',
                               marginLeft: '6px'
                             }}
                           />
@@ -382,7 +382,7 @@ export default function MorphedMenu({
                                 transition: 'all 0.2s ease'
                               }}
                             >
-                              <span style={{ color: sub.active ? '#123499' : isSubHovered ? '#FFFFFF' : 'rgba(255, 255, 255, 0.5)' }}>
+                              <span style={{ color: sub.active ? '#FF4081' : isSubHovered ? '#FFFFFF' : 'rgba(255, 255, 255, 0.5)' }}>
                                 {sub.icon}
                               </span>
                               <span
@@ -440,15 +440,28 @@ export default function MorphedMenu({
                       </div>
                       <span 
                         style={{ 
-                          fontSize: '0.68rem', 
-                          padding: '2px 8px', 
-                          borderRadius: '4px', 
-                          background: 'rgba(18, 52, 153, 0.2)',
-                          border: '1px solid #123499',
-                          color: '#123499',
-                          fontWeight: 700,
+                          fontSize: '0.72rem', 
+                          padding: '2px 10px', 
+                          borderRadius: '6px', 
+                          background: userRole === 'officer' 
+                            ? 'rgba(245, 158, 11, 0.18)' 
+                            : userRole === 'secretary'
+                            ? 'rgba(14, 165, 233, 0.18)'
+                            : 'rgba(216, 27, 96, 0.18)',
+                          border: userRole === 'officer'
+                            ? '1px solid #F59E0B'
+                            : userRole === 'secretary'
+                            ? '1px solid #38BDF8'
+                            : '1px solid #FF4081',
+                          color: userRole === 'officer'
+                            ? '#FBBF24'
+                            : userRole === 'secretary'
+                            ? '#38BDF8'
+                            : '#FF6B8B',
+                          fontWeight: 800,
                           display: 'inline-block',
-                          marginTop: '2px'
+                          marginTop: '2px',
+                          letterSpacing: '0.5px'
                         }}
                       >
                         {(userRole || 'MEMBER').toUpperCase()}

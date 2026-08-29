@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Navbar from './components/Layout/Navbar';
 import Footer from './components/Layout/Footer';
 import PublicHome from './components/Pages/PublicHome';
 import DistrictAccess from './components/Pages/DistrictAccess';
-import PortalPage from './components/Pages/PortalPage';
+const PortalPage = React.lazy(() => import('./components/Pages/PortalPage'));
 import LoginModal from './components/Modals/LoginModal';
 import PresidentModal from './components/Modals/PresidentModal';
 import { INITIAL_CLUBS } from './data/districtData';
@@ -317,6 +317,7 @@ export default function App() {
             onNavigateDistrict={() => {
               handlePageChange('district', 'map-clubs');
             }}
+            onNavigatePage={(page) => handlePageChange(page)}
             onOpenLoginModal={() => setIsLoginModalOpen(true)}
           />
         )}
@@ -337,24 +338,33 @@ export default function App() {
         )}
 
         {activePage === 'portal' && (
-          <PortalPage
-            isLoggedIn={isLoggedIn}
-            userRole={userRole}
-            setUserRole={setUserRole}
-            userSession={userSession}
-            onLogout={() => {
-              setIsLoggedIn(false);
-              setUserSession(null);
-              handlePageChange('home');
-            }}
-            onOpenLoginModal={() => setIsLoginModalOpen(true)}
-            onOpenUploadClubModal={() => setUploaderModalMode('uploadClub')}
-            onOpenPostInitiativeModal={() => {
-              setPreselectedClubForModal(null);
-              setUploaderModalMode('postInitiative');
-            }}
-            clubs={clubs}
-          />
+          <Suspense fallback={
+            <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+              <RotaryLoaderLogo size={64} />
+              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--rotaract-pink)', letterSpacing: '1px' }}>
+                LOADING DISTRICT 3011 PORTAL...
+              </div>
+            </div>
+          }>
+            <PortalPage
+              isLoggedIn={isLoggedIn}
+              userRole={userRole}
+              setUserRole={setUserRole}
+              userSession={userSession}
+              onLogout={() => {
+                setIsLoggedIn(false);
+                setUserSession(null);
+                handlePageChange('home');
+              }}
+              onOpenLoginModal={() => setIsLoginModalOpen(true)}
+              onOpenUploadClubModal={() => setUploaderModalMode('uploadClub')}
+              onOpenPostInitiativeModal={() => {
+                setPreselectedClubForModal(null);
+                setUploaderModalMode('postInitiative');
+              }}
+              clubs={clubs}
+            />
+          </Suspense>
         )}
 
         {/* Shared Footer (rendered inside main scroll container for non-home pages) */}

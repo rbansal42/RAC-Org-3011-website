@@ -66,52 +66,52 @@ export const DISTRICT_ZONES = [
 export const ROTARY_FOCUS_AREAS = [
   {
     id: "peace",
-    name: "Peacebuilding & Conflict Prevention",
+    name: "Peacebuilding and conflict prevention",
     color: "#D81B60",
     icon: "ShieldCheck",
     description: "Training youth leaders and creating safe, inclusive spaces for community dialogue."
   },
   {
     id: "disease",
-    name: "Disease Prevention & Treatment",
+    name: "Disease prevention and treatment",
     color: "#D81B60",
     icon: "HeartPulse",
     description: "Free medical camps, mega blood donation drives, and pediatric health equity."
   },
   {
     id: "water",
-    name: "Water, Sanitation & Hygiene",
+    name: "Water, sanitation, and hygiene (WASH)",
     color: "#D81B60",
     icon: "Droplets",
     description: "Installing commercial RO plants and sanitation facilities in rural government schools."
   },
   {
     id: "maternal",
-    name: "Maternal & Child Health",
+    name: "Maternal and child health",
     color: "#D81B60",
     icon: "Sparkles",
-    description: "Menstrual dignity workshops, pad distribution, and pediatric cardiac surgery funding."
+    description: "Menstrual dignity workshops, pad distribution, and pediatric health equity."
   },
   {
     id: "education",
-    name: "Basic Education & Literacy",
+    name: "Basic education and literacy",
     color: "#D81B60",
     icon: "BookOpen",
     description: "Setting up smart classrooms, digital tablet labs, and adult literacy drives."
   },
   {
     id: "economy",
-    name: "Community Economic Development",
+    name: "Community economic development",
     color: "#D81B60",
     icon: "TrendingUp",
-    description: "Skill development centers and micro-grants for women entrepreneurs."
+    description: "Skill development centers and micro-grants for women and youth entrepreneurs."
   },
   {
     id: "environment",
-    name: "Environment & Sustainability",
+    name: "Supporting the environment",
     color: "#D81B60",
     icon: "Leaf",
-    description: "Miyawaki urban micro-forest plantations, solar panels, and e-waste recycling."
+    description: "Miyawaki urban micro-forest plantations, clean water care, solar panels, and e-waste recycling."
   }
 ];
 

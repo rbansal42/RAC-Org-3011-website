@@ -17,14 +17,13 @@ const MONTH_OPTIONS = [
 ];
 
 const FOCUS_AREA_OPTIONS = [
-  'Peacebuilding & Conflict Prevention',
-  'Disease Prevention & Treatment',
-  'Water, Sanitation & Hygiene',
-  'Maternal & Child Health',
-  'Basic Education & Literacy',
-  'Community Economic Development',
-  'Environment & Sustainability',
-  'Rotary Foundation & Youth Leadership'
+  'Peacebuilding and conflict prevention',
+  'Disease prevention and treatment',
+  'Water, sanitation, and hygiene (WASH)',
+  'Maternal and child health',
+  'Basic education and literacy',
+  'Community economic development',
+  'Supporting the environment'
 ];
 
 const SECTION_ICONS = {
@@ -66,8 +65,14 @@ export default function PortalPage({
   
   const [submissions, setSubmissions] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
-  const [expandedReportId, setExpandedReportId] = useState(null);
+  const [expandedReportId, setExpandedReportId] = useState(null); // default collapsed
   
+  // Master District Submissions Search & Filter State
+  const [masterSearchQuery, setMasterSearchQuery] = useState('');
+  const [masterStatusFilter, setMasterStatusFilter] = useState('all'); // 'all' | 'reported' | 'flagged' | 'draft'
+  const [masterMonthFilter, setMasterMonthFilter] = useState('all');
+  const [masterZoneFilter, setMasterZoneFilter] = useState('all');
+
   // Monthly Submission Form State
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState(null);
@@ -75,6 +80,12 @@ export default function PortalPage({
   const [selectedMonth, setSelectedMonth] = useState('August 2026');
   const [activeFormSection, setActiveFormSection] = useState('clubMeetings');
   
+  // Auto-Save & Validation State
+  const [autoSaveStatus, setAutoSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+  const [lastAutoSavedTime, setLastAutoSavedTime] = useState(null);
+  const [validationErrors, setValidationErrors] = useState({}); // { [sectionId]: { [projId]: { [field]: errorMsg } } }
+  const [formErrorMessage, setFormErrorMessage] = useState('');
+
   // Compliance Matrix State
   const [complianceMonth, setComplianceMonth] = useState('August 2026');
   const [complianceSearch, setComplianceSearch] = useState('');
@@ -82,7 +93,7 @@ export default function PortalPage({
   const [complianceZoneFilter, setComplianceZoneFilter] = useState('all'); // 'all' | 'Zone Prithvi' | 'Zone Agni' | 'Zone Vayu' | 'Zone Akash'
   const [copiedReminderClubId, setCopiedReminderClubId] = useState(null);
 
-  // Sections project array state
+  // Sections project array state (Defaults to 0 projects)
   const [sectionsData, setSectionsData] = useState({
     clubMeetings: [],
     clubServices: [],
@@ -92,12 +103,15 @@ export default function PortalPage({
     districtProjects: []
   });
 
+  // Flagging State (Rich who, why, comment, and section checkboxes)
   const [flaggingSub, setFlaggingSub] = useState(null);
+  const [flagReason, setFlagReason] = useState('Incomplete Information / Missing Proof Links');
   const [flagComment, setFlagComment] = useState('');
+  const [flaggedSections, setFlaggedSections] = useState({});
 
   const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcementCategory, setAnnouncementCategory] = useState('District Event');
-  const [announcementTargetAudience, setAnnouncementTargetAudience] = useState('all'); // 'all' | 'presidents' | 'secretaries' | 'dac'
+  const [announcementTargetAudience, setAnnouncementTargetAudience] = useState('all'); // 'all' | 'presidents' | 'secretaries' | 'dac' | 'test_group'
   const [announcementContent, setAnnouncementContent] = useState('');
   const [announcementSuccessMsg, setAnnouncementSuccessMsg] = useState('');
 
@@ -114,9 +128,8 @@ export default function PortalPage({
       ]);
       setSubmissions(subs || []);
       setAnnouncements(annos || []);
-      if (subs && subs.length > 0) {
-        setExpandedReportId(subs[0].id);
-      }
+      // Default to collapsed inspect view
+      setExpandedReportId(null);
     }
     loadCloudData();
   }, []);
@@ -131,13 +144,20 @@ export default function PortalPage({
     }
   };
 
+  const handleDeleteAnnouncement = async (announcementId) => {
+    if (window.confirm("Are you sure you want to permanently delete this announcement?")) {
+      const updated = await dbService.deleteAnnouncement(announcementId);
+      setAnnouncements(updated || []);
+    }
+  };
+
   // Helper to create blank project entry
   const createEmptyProject = () => ({
     id: `proj-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     eventName: '',
     date: new Date().toISOString().split('T')[0],
     venue: '',
-    areaOfFocus: 'Disease Prevention & Treatment',
+    areaOfFocus: 'Peacebuilding and conflict prevention',
     clubStrength: '',
     initiatedBy: 'Rotaract',
     collaboratingOrgs: '',
@@ -148,32 +168,51 @@ export default function PortalPage({
     driveLink: ''
   });
 
-  // Open modal to submit new report or resume active draft
-  const handleOpenNewReport = () => {
-    const existingDraft = submissions.find(s => 
-      s.status === 'draft' && 
-      s.month === selectedMonth &&
-      (
-        (userSession?.email && s.clubEmail === userSession.email) ||
-        (userSession?.clubName && s.clubName === userSession.clubName)
-      )
-    );
+  // Open modal to submit new report or resume existing monthly report/draft
+  const handleOpenNewReport = (targetMonth = null) => {
+    const monthToLoad = targetMonth || selectedMonth || 'August 2026';
+    setSelectedMonth(monthToLoad);
 
-    if (existingDraft) {
-      setEditingReportId(existingDraft.id);
-      setSectionsData(existingDraft.sections || {
-        clubMeetings: [createEmptyProject()],
+    const userClubClean = (userSession?.clubName || '').toLowerCase().replace(/rotaract|club|of|\s+/g, '');
+    const userEmailClean = (userSession?.email || '').toLowerCase();
+
+    // Check if report already exists in submissions
+    const existingReport = submissions.find(s => {
+      if (s.month !== monthToLoad) return false;
+      const sClubClean = (s.clubName || '').toLowerCase().replace(/rotaract|club|of|\s+/g, '');
+      const sEmailClean = (s.clubEmail || '').toLowerCase();
+      return (
+        (userEmailClean && sEmailClean === userEmailClean) ||
+        (userClubClean.length > 3 && sClubClean.includes(userClubClean))
+      );
+    });
+
+    // Check local draft
+    const draftKey = `district3011_active_draft_${userSession?.email || 'user'}_${monthToLoad}`;
+    let localDraft = null;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) localDraft = JSON.parse(raw);
+    } catch (e) {}
+
+    if (existingReport) {
+      setEditingReportId(existingReport.id);
+      setSectionsData(localDraft?.sections || existingReport.sections || {
+        clubMeetings: [],
         clubServices: [],
         communityServices: [],
         internationalServices: [],
         vocationalServices: [],
         districtProjects: []
       });
+    } else if (localDraft && localDraft.sections) {
+      setEditingReportId(localDraft.id || null);
+      setSectionsData(localDraft.sections);
     } else {
+      // 0 projects default on fresh submission
       setEditingReportId(null);
-      setSelectedMonth('August 2026');
       setSectionsData({
-        clubMeetings: [createEmptyProject()],
+        clubMeetings: [],
         clubServices: [],
         communityServices: [],
         internationalServices: [],
@@ -181,11 +220,14 @@ export default function PortalPage({
         districtProjects: []
       });
     }
+
+    setValidationErrors({});
+    setFormErrorMessage('');
     setActiveFormSection('clubMeetings');
     setIsReportModalOpen(true);
   };
 
-  // Open modal to edit existing flagged report
+  // Open modal to edit existing flagged or submitted report
   const handleOpenEditReport = (report) => {
     setEditingReportId(report.id);
     setSelectedMonth(report.month || 'August 2026');
@@ -197,8 +239,59 @@ export default function PortalPage({
       vocationalServices: report.sections?.vocationalServices || [],
       districtProjects: report.sections?.districtProjects || []
     });
+    setValidationErrors({});
+    setFormErrorMessage('');
     setActiveFormSection('clubMeetings');
     setIsReportModalOpen(true);
+  };
+
+  // Handle month selection change in reporting studio
+  const handleSelectMonthInStudio = (newMonth) => {
+    setSelectedMonth(newMonth);
+    const userClubClean = (userSession?.clubName || '').toLowerCase().replace(/rotaract|club|of|\s+/g, '');
+    const userEmailClean = (userSession?.email || '').toLowerCase();
+
+    const existingReport = submissions.find(s => {
+      if (s.month !== newMonth) return false;
+      const sClubClean = (s.clubName || '').toLowerCase().replace(/rotaract|club|of|\s+/g, '');
+      const sEmailClean = (s.clubEmail || '').toLowerCase();
+      return (
+        (userEmailClean && sEmailClean === userEmailClean) ||
+        (userClubClean.length > 3 && sClubClean.includes(userClubClean))
+      );
+    });
+
+    const draftKey = `district3011_active_draft_${userSession?.email || 'user'}_${newMonth}`;
+    let localDraft = null;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) localDraft = JSON.parse(raw);
+    } catch (e) {}
+
+    if (existingReport) {
+      setEditingReportId(existingReport.id);
+      setSectionsData(localDraft?.sections || existingReport.sections || {
+        clubMeetings: [],
+        clubServices: [],
+        communityServices: [],
+        internationalServices: [],
+        vocationalServices: [],
+        districtProjects: []
+      });
+    } else if (localDraft && localDraft.sections) {
+      setEditingReportId(localDraft.id || null);
+      setSectionsData(localDraft.sections);
+    } else {
+      setEditingReportId(null);
+      setSectionsData({
+        clubMeetings: [],
+        clubServices: [],
+        communityServices: [],
+        internationalServices: [],
+        vocationalServices: [],
+        districtProjects: []
+      });
+    }
   };
 
   // Add project to a specific section
@@ -215,9 +308,16 @@ export default function PortalPage({
       ...prev,
       [sectionKey]: prev[sectionKey].filter(p => p.id !== projId)
     }));
+    // Clear validation errors for deleted project
+    setValidationErrors(prev => {
+      if (!prev[sectionKey] || !prev[sectionKey][projId]) return prev;
+      const nextSec = { ...prev[sectionKey] };
+      delete nextSec[projId];
+      return { ...prev, [sectionKey]: nextSec };
+    });
   };
 
-  // Update project field value
+  // Update project field value and clear corresponding error
   const handleUpdateProjectField = (sectionKey, projId, fieldName, value) => {
     setSectionsData(prev => ({
       ...prev,
@@ -228,21 +328,144 @@ export default function PortalPage({
         return p;
       })
     }));
+
+    if (validationErrors[sectionKey]?.[projId]?.[fieldName]) {
+      setValidationErrors(prev => {
+        const next = { ...prev };
+        if (next[sectionKey]?.[projId]) {
+          const nextProj = { ...next[sectionKey][projId] };
+          delete nextProj[fieldName];
+          next[sectionKey] = { ...next[sectionKey], [projId]: nextProj };
+        }
+        return next;
+      });
+    }
+  };
+
+  // Auto-Save Effect (Local Draft Persistence)
+  useEffect(() => {
+    if (!isReportModalOpen) return;
+
+    const totalProjs = Object.values(sectionsData).reduce((sum, arr) => sum + (arr ? arr.length : 0), 0);
+    if (totalProjs === 0) return;
+
+    setAutoSaveStatus('saving');
+    const timer = setTimeout(() => {
+      try {
+        const draftKey = `district3011_active_draft_${userSession?.email || 'user'}_${selectedMonth}`;
+        const draftPayload = {
+          id: editingReportId || null,
+          month: selectedMonth,
+          clubName: userSession?.clubName || '',
+          clubEmail: userSession?.email || '',
+          submittedBy: userSession?.fullName ? `${userSession.fullName} (${userSession.post || 'Officer'})` : (userSession?.post || 'Officer'),
+          submittedAt: new Date().toISOString().split('T')[0],
+          status: 'draft',
+          sections: sectionsData,
+          updatedAt: Date.now()
+        };
+        localStorage.setItem(draftKey, JSON.stringify(draftPayload));
+        
+        setAutoSaveStatus('saved');
+        setLastAutoSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      } catch (err) {
+        console.warn('Auto-save notice:', err);
+        setAutoSaveStatus('error');
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [sectionsData, selectedMonth, isReportModalOpen, editingReportId, userSession]);
+
+  // Comprehensive Input Validation Function
+  const validateForm = () => {
+    const errors = {};
+    let errorCount = 0;
+    let firstErrorSection = null;
+
+    const totalProjs = Object.values(sectionsData).reduce((sum, arr) => sum + (arr ? arr.length : 0), 0);
+    if (totalProjs === 0) {
+      return {
+        isValid: false,
+        message: 'Please add at least 1 project in any of the 6 avenues before submitting to District.',
+        errors: {}
+      };
+    }
+
+    for (const sec of REPORT_SECTIONS) {
+      const projects = sectionsData[sec.id] || [];
+      for (const proj of projects) {
+        const pErrors = {};
+        if (!proj.eventName || proj.eventName.trim().length < 3) {
+          pErrors.eventName = 'Event name must be at least 3 characters.';
+        }
+        if (!proj.date) {
+          pErrors.date = 'Event date is required.';
+        }
+        if (!proj.venue || proj.venue.trim().length < 2) {
+          pErrors.venue = 'Venue / location is required.';
+        }
+        if (!proj.areaOfFocus) {
+          pErrors.areaOfFocus = 'Rotary Area of Focus is required.';
+        }
+        if (!proj.description || proj.description.trim().length < 10) {
+          pErrors.description = 'Description is required (minimum 10 characters / target ~40 words).';
+        }
+        if (proj.showcaseLink && !/^https?:\/\//i.test(proj.showcaseLink)) {
+          pErrors.showcaseLink = 'Please enter a valid URL starting with http:// or https://';
+        }
+        if (proj.driveLink && !/^https?:\/\//i.test(proj.driveLink)) {
+          pErrors.driveLink = 'Please enter a valid Google Drive URL starting with http:// or https://';
+        }
+
+        if (Object.keys(pErrors).length > 0) {
+          if (!errors[sec.id]) errors[sec.id] = {};
+          errors[sec.id][proj.id] = pErrors;
+          if (!firstErrorSection) firstErrorSection = sec.id;
+          errorCount += Object.keys(pErrors).length;
+        }
+      }
+    }
+
+    if (errorCount > 0) {
+      return {
+        isValid: false,
+        firstErrorSection,
+        errors,
+        message: `Please complete all required fields (${errorCount} incomplete or invalid fields found). Please check the highlighted sections.`
+      };
+    }
+
+    return { isValid: true, errors: {} };
   };
 
   // Submit or Save Draft Monthly Report (100% Dynamic from userSession)
   const handleSubmitMonthlyReport = async (e, targetStatus = 'reported') => {
     if (e && e.preventDefault) e.preventDefault();
+    setFormErrorMessage('');
 
     if (!userSession || !userSession.email) {
       alert('Session error: Unable to verify logged-in user profile. Please log in again.');
       return;
     }
 
-    const totalProjs = Object.values(sectionsData).reduce((sum, arr) => sum + (arr ? arr.length : 0), 0);
-    if (totalProjs === 0) {
-      alert('Please add at least 1 project in any section to save or submit your monthly report.');
-      return;
+    // If final submission, run strict input validation
+    if (targetStatus === 'reported') {
+      const validation = validateForm();
+      if (!validation.isValid) {
+        setValidationErrors(validation.errors);
+        setFormErrorMessage(validation.message);
+        if (validation.firstErrorSection) {
+          setActiveFormSection(validation.firstErrorSection);
+        }
+        return;
+      }
+
+      const totalProjs = Object.values(sectionsData).reduce((sum, arr) => sum + (arr ? arr.length : 0), 0);
+      if (totalProjs === 0) {
+        setFormErrorMessage('Please add at least 1 project in any avenue before submitting your monthly report to District Secretariat.');
+        return;
+      }
     }
 
     const activeEmail = userSession.email;
@@ -257,50 +480,88 @@ export default function PortalPage({
       clubEmail: activeEmail,
       submittedBy: activeFullName ? `${activeFullName} (${activePost})` : activePost,
       submittedAt: new Date().toISOString().split('T')[0],
-      status: targetStatus, // 'draft' | 'reported' | 'flagged'
+      status: targetStatus, // 'draft' | 'reported'
       flagComment: null,
+      flagReason: null,
+      flaggedBy: null,
+      sectionFlags: null,
       sections: sectionsData
     };
 
     const updatedSubmissions = await dbService.insertSubmission(reportPayload);
     setSubmissions(updatedSubmissions || []);
     
-    if (updatedSubmissions && updatedSubmissions.length > 0) {
-      const match = updatedSubmissions.find(s => s.month === selectedMonth && (s.clubEmail === activeEmail || s.clubName === activeClubName));
-      if (match) {
-        setExpandedReportId(match.id);
-      }
+    // Clear local draft upon successful final submission
+    if (targetStatus === 'reported') {
+      const draftKey = `district3011_active_draft_${activeEmail}_${selectedMonth}`;
+      localStorage.removeItem(draftKey);
     }
 
     setIsReportModalOpen(false);
     setEditingReportId(null);
+    setExpandedReportId(null);
+  };
+
+  // Open flag modal (District Officer)
+  const handleOpenFlagModal = (report) => {
+    setFlaggingSub(report);
+    setFlagReason(report.flagReason || 'Incomplete Information / Missing Proof Links');
+    setFlagComment(report.flagComment || '');
+    setFlaggedSections(report.sectionFlags && typeof report.sectionFlags === 'object' ? report.sectionFlags : {});
   };
 
   // Confirm flag comment (District Officer) with Email Notification
   const handleConfirmFlag = async () => {
     if (!flaggingSub || !flagComment.trim()) return;
-    const updated = await dbService.flagSubmission(flaggingSub.id, flagComment);
-    setSubmissions(updated);
 
-    // Trigger Automated Email Dispatch via Resend API
-    const recipientEmail = flaggingSub.clubEmail || 'techrid3011@gmail.com';
-    const emailRes = await sendReportFlaggedEmail({
-      clubName: flaggingSub.clubName,
-      month: flaggingSub.month,
-      recipientEmail: recipientEmail,
-      flagComment: flagComment
-    });
+    const officerName = userSession?.fullName 
+      ? `${userSession.fullName}${userSession.post ? ` (${userSession.post})` : ''}` 
+      : 'District Secretariat Officer';
 
-    if (!emailRes.success && emailRes.fallbackMailto) {
-      const emailSubject = encodeURIComponent(`[District 3011 Alert] Action Required: Monthly Report Flagged - ${flaggingSub.month}`);
-      const emailBody = encodeURIComponent(
-        `Dear Club Officers of ${flaggingSub.clubName},\n\nYour Monthly Project Report for ${flaggingSub.month} has been flagged by District Secretariat 3011 with the following officer feedback comment:\n\n"${flagComment}"\n\nPlease log into the District Portal to edit and re-submit your report.\n\nRegards,\nRotaract District Organization 3011`
-      );
-      window.open(`mailto:${recipientEmail},techrid3011@gmail.com?subject=${emailSubject}&body=${emailBody}`, '_blank');
+    const sectionFlagsObj = {};
+    if (flaggedSections && typeof flaggedSections === 'object') {
+      if (Array.isArray(flaggedSections)) {
+        flaggedSections.forEach(sId => {
+          if (sId) sectionFlagsObj[sId] = true;
+        });
+      } else {
+        Object.keys(flaggedSections).forEach(sId => {
+          if (flaggedSections[sId]) sectionFlagsObj[sId] = true;
+        });
+      }
+    }
+
+    const flagPayload = {
+      comment: flagComment,
+      reason: flagReason,
+      flaggedBy: officerName,
+      sectionFlags: sectionFlagsObj
+    };
+
+    try {
+      const updated = await dbService.flagSubmission(flaggingSub.id, flagPayload);
+      setSubmissions(updated);
+    } catch (dbErr) {
+      console.warn('[Portal] Database flag error:', dbErr);
+    }
+
+    // Trigger Automated Email Dispatch via Resend API (non-blocking)
+    if (flaggingSub.clubEmail) {
+      try {
+        await sendReportFlaggedEmail({
+          clubName: flaggingSub.clubName,
+          month: flaggingSub.month,
+          recipientEmail: flaggingSub.clubEmail,
+          flagComment: `[Reason: ${flagReason}] ${flagComment}`
+        });
+      } catch (emailErr) {
+        console.warn('[Portal] Email notification dispatch note:', emailErr);
+      }
     }
 
     setFlaggingSub(null);
     setFlagComment('');
+    setFlaggedSections({});
   };
 
   // Post District Announcement with Audience-Targeted Email Broadcast
@@ -326,36 +587,18 @@ export default function PortalPage({
     const updated = await dbService.insertAnnouncement(newAnno);
     setAnnouncements(updated);
 
-    // Fetch target emails dynamically based on selected audience group
-    // TEST_GROUP_EMAILS is defined at the top of the announcements render block (line ~1257) — reuse here
-    const TEST_GROUP_EMAILS_BROADCAST = [
-      'itsdrrarchit@gmail.com',
-      'sarthakmanchanda2@gmail.com',
-      'rtrshefali2004@gmail.com',
-      'himanshugulati.rotary@gmail.com',
-      'harshitam2636@gmail.com',
-      'jasraj2626@gmail.com',
-      'rtrdivyanshu3011@gmail.com',
-      'dhruvika038@gmail.com'
-    ];
+    let recipientEmails = [];
 
-    let recipientEmails = ['techrid3011@gmail.com'];
-
-    if (announcementTargetAudience === 'test_group') {
-      recipientEmails = TEST_GROUP_EMAILS_BROADCAST;
-    } else if (announcementTargetAudience !== 'all') {
-      // Fetch audience emails via secure RPC (avoids direct user_profiles table access)
-      try {
-        const { data: emailList, error: emailErr } = await dbService.fetchAudienceEmails(announcementTargetAudience);
-        if (!emailErr && emailList && emailList.length > 0) {
-          recipientEmails = emailList;
-        }
-      } catch (err) {
-        console.warn('Audience email fetch notice:', err);
+    try {
+      const { data: emailList, error: emailErr } = await dbService.fetchAudienceEmails(announcementTargetAudience);
+      if (!emailErr && emailList && emailList.length > 0) {
+        recipientEmails = emailList;
       }
+    } catch (err) {
+      console.warn('Audience email fetch notice:', err);
     }
 
-    const audienceLabel = announcementTargetAudience === 'test_group' ? 'Secretariat & Tech Test Group (8 Members)' :
+    const audienceLabel = announcementTargetAudience === 'test_group' ? 'Secretariat & Tech Test Group (7 Members)' :
                           announcementTargetAudience === 'presidents' ? 'Club Presidents' :
                           announcementTargetAudience === 'secretaries' ? 'Club Secretaries' :
                           announcementTargetAudience === 'dac' ? 'DAC District Officers' : 'All Members & Officers';
@@ -379,9 +622,10 @@ export default function PortalPage({
     setTimeout(() => setAnnouncementSuccessMsg(''), 7000);
   };
 
-  // Copy Reminder Message to Clipboard for pending clubs
+  // Copy Reminder Message to Clipboard for pending clubs (Sanitized to avoid duplicate 'Rtr.')
   const handleCopyReminder = (clubName, presidentName) => {
-    const reminderText = `Dear Rtr. ${presidentName || 'President'} (President, ${clubName}),\nThis is an official reminder from District Secretariat 3011 to submit your Monthly Project Report for ${complianceMonth} on the District Portal.\n\nPlease submit your report at your earliest convenience.\n- Rotaract District Organization 3011`;
+    const cleanPres = (presidentName || 'President').replace(/^Rtr\.?\s*/i, '').trim();
+    const reminderText = `Dear Rtr. ${cleanPres} (President, ${clubName}),\nThis is an official reminder from District Secretariat 3011 to submit your Monthly Project Report for ${complianceMonth} on the District Portal.\n\nPlease submit your report at your earliest convenience.\n- Rotaract District Organization 3011`;
     navigator.clipboard.writeText(reminderText);
     setCopiedReminderClubId(clubName);
     setTimeout(() => setCopiedReminderClubId(null), 3000);
@@ -393,8 +637,12 @@ export default function PortalPage({
 
   // Direct automated email reminder dispatch via Serverless API
   const handleSendReminderEmail = async (club) => {
+    const targetEmail = club.email || club.secretaryEmail;
+    if (!targetEmail) {
+      alert(`No contact email on record for ${club.name}. Please copy the reminder text instead.`);
+      return;
+    }
     setSendingReminderClub(club.name);
-    const targetEmail = club.email || club.secretaryEmail || 'techrid3011@gmail.com';
     const emailRes = await sendReportingReminderEmail({
       clubName: club.name,
       month: complianceMonth,
@@ -418,18 +666,23 @@ export default function PortalPage({
   const userClubName = (userSession?.clubName || '').toLowerCase().replace(/rotaract|club|of|\s+/g, '');
   const userEmail = (userSession?.email || '').toLowerCase();
 
+  const isMatchForUserClub = (s) => {
+    if (!s) return false;
+    const subClubName = (s.clubName || '').toLowerCase().replace(/rotaract|club|of|\s+/g, '');
+    const subEmail = (s.clubEmail || '').toLowerCase();
+    return (
+      (userEmail && subEmail === userEmail) || 
+      (userClubName.length > 3 && subClubName.includes(userClubName)) || 
+      (subClubName.length > 3 && userClubName.includes(subClubName))
+    );
+  };
+
+  // Scope:
+  // - District Officers see all finalized (reported/flagged) reports across all clubs, PLUS their own club's draft (if any).
+  // - Club Presidents/Secretaries see only their own club's reports (draft, reported, flagged).
   const clubSubmissions = isDistrictOfficer 
-    ? submissions 
-    : submissions.filter(s => {
-        if (!s) return false;
-        const subClubName = (s.clubName || '').toLowerCase().replace(/rotaract|club|of|\s+/g, '');
-        const subEmail = (s.clubEmail || '').toLowerCase();
-        return (
-          subEmail === userEmail || 
-          (userClubName.length > 3 && subClubName.includes(userClubName)) || 
-          (subClubName.length > 3 && userClubName.includes(subClubName))
-        );
-      });
+    ? submissions.filter(s => s && (s.status !== 'draft' || isMatchForUserClub(s))) 
+    : submissions.filter(isMatchForUserClub);
 
   // Calculate compliance data for the selected month
   const clubComplianceList = allDistrictClubs.map(c => {
@@ -451,9 +704,15 @@ export default function PortalPage({
       );
     });
 
-    let status = 'pending'; // 'submitted' | 'flagged' | 'pending'
+    let status = 'pending'; // 'submitted' | 'flagged' | 'draft' | 'pending'
     if (matchingReport) {
-      status = matchingReport.status === 'flagged' ? 'flagged' : 'submitted';
+      if (matchingReport.status === 'flagged') {
+        status = 'flagged';
+      } else if (matchingReport.status === 'draft') {
+        status = 'draft';
+      } else if (matchingReport.status === 'reported') {
+        status = 'submitted';
+      }
     }
 
     return {
@@ -465,6 +724,7 @@ export default function PortalPage({
 
   const totalClubsCount = clubComplianceList.length;
   const submittedClubsCount = clubComplianceList.filter(item => item.status === 'submitted' || item.status === 'flagged').length;
+  const draftClubsCount = clubComplianceList.filter(item => item.status === 'draft').length;
   const pendingClubsCount = totalClubsCount - submittedClubsCount;
   const flaggedClubsCount = clubComplianceList.filter(item => item.status === 'flagged').length;
   const complianceRate = totalClubsCount > 0 ? Math.round((submittedClubsCount / totalClubsCount) * 100) : 0;
@@ -487,7 +747,8 @@ export default function PortalPage({
 
     const matchesStatus = complianceFilter === 'all' || 
       (complianceFilter === 'submitted' && (item.status === 'submitted' || item.status === 'flagged')) ||
-      (complianceFilter === 'pending' && item.status === 'pending') ||
+      (complianceFilter === 'pending' && (item.status === 'pending' || item.status === 'draft')) ||
+      (complianceFilter === 'draft' && item.status === 'draft') ||
       (complianceFilter === 'flagged' && item.status === 'flagged');
 
     const matchesZone = complianceZoneFilter === 'all' || 
@@ -495,6 +756,40 @@ export default function PortalPage({
 
     return matchesSearch && matchesStatus && matchesZone;
   });
+
+  // Filter master submissions by search, status, and month
+  const filteredMasterSubmissions = useMemo(() => {
+    return clubSubmissions.filter(report => {
+      if (!report) return false;
+      // Status filter
+      if (masterStatusFilter !== 'all') {
+        if (masterStatusFilter === 'reported' && report.status !== 'reported') return false;
+        if (masterStatusFilter === 'flagged' && report.status !== 'flagged') return false;
+        if (masterStatusFilter === 'draft' && report.status !== 'draft') return false;
+      }
+      // Month filter
+      if (masterMonthFilter !== 'all' && report.month !== masterMonthFilter) return false;
+      // Search query
+      if (masterSearchQuery.trim()) {
+        const q = masterSearchQuery.toLowerCase();
+        const clubMatch = (report.clubName || '').toLowerCase().includes(q);
+        const submitterMatch = (report.submittedBy || '').toLowerCase().includes(q);
+        const monthMatch = (report.month || '').toLowerCase().includes(q);
+        const projectMatch = Object.values(report.sections || {}).some(arr => 
+          (arr || []).some(p => 
+            (p.eventName || '').toLowerCase().includes(q) || 
+            (p.venue || '').toLowerCase().includes(q) || 
+            (p.description || '').toLowerCase().includes(q) ||
+            (p.areaOfFocus || '').toLowerCase().includes(q)
+          )
+        );
+        if (!clubMatch && !submitterMatch && !monthMatch && !projectMatch) return false;
+      }
+      return true;
+    });
+  }, [clubSubmissions, masterStatusFilter, masterMonthFilter, masterSearchQuery]);
+
+  const displayedReports = isDistrictOfficer ? filteredMasterSubmissions : clubSubmissions;
 
   return (
     <div style={{
@@ -556,7 +851,7 @@ export default function PortalPage({
                 DISTRICT 3011 SECURE PORTAL
               </span>
               <span className="pill-gold" style={{ fontSize: '0.74rem' }}>
-                <ShieldCheck size={12} /> Google 2FA ({isDistrictOfficer ? 'SECRETARIAT' : 'CLUB OFFICER'})
+                <ShieldCheck size={12} /> Google 2FA ({isDistrictOfficer ? 'SECRETARIAT' : sessionRole === 'secretary' ? 'CLUB SECRETARY' : 'CLUB PRESIDENT'})
               </span>
             </div>
             <h2 style={{ fontSize: isMobile ? '1.35rem' : '1.7rem', fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
@@ -565,8 +860,8 @@ export default function PortalPage({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: isMobile ? '0.84rem' : '0.92rem', fontWeight: 800, color: 'var(--rotaract-pink)' }}>
                 {isDistrictOfficer 
-                  ? (userSession?.post || userSession?.designation || 'District Rotaract Representative') 
-                  : `${userSession?.clubName || 'Rotaract Club'} • ${userSession?.post || 'Club Officer'}`
+                  ? (userSession?.post || userSession?.designation || 'District Secretariat Officer') 
+                  : `${userSession?.clubName || 'Rotaract Club'} • ${userSession?.post || (sessionRole === 'secretary' ? 'Club Secretary' : 'Club President')}`
                 }
               </span>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>•</span>
@@ -623,7 +918,6 @@ export default function PortalPage({
           paddingBottom: '12px',
           overflowX: 'auto',
           WebkitOverflowScrolling: 'touch',
-          /* Hide scrollbar visually but keep it functional */
           scrollbarWidth: 'none',
           msOverflowStyle: 'none'
         }}>
@@ -723,7 +1017,7 @@ export default function PortalPage({
 
               {!isDistrictOfficer && (
                 <button 
-                  onClick={handleOpenNewReport}
+                  onClick={() => handleOpenNewReport()}
                   className="btn-rotaract"
                   style={{
                     padding: isMobile ? '12px 18px' : '12px 24px',
@@ -738,23 +1032,155 @@ export default function PortalPage({
               )}
             </div>
 
+            {/* MASTER DISTRICT SUBMISSIONS SEARCH & FILTER BAR (DISTRICT OFFICER ONLY) */}
+            {isDistrictOfficer && (
+              <div style={{
+                background: '#FFFFFF',
+                border: '1px solid rgba(216, 27, 96, 0.18)',
+                borderRadius: isMobile ? '16px' : '20px',
+                padding: isMobile ? '16px 14px' : '18px 24px',
+                marginBottom: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  alignItems: isMobile ? 'stretch' : 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px'
+                }}>
+                  {/* Search Input */}
+                  <div style={{ position: 'relative', width: isMobile ? '100%' : '360px', maxWidth: '100%' }}>
+                    <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      placeholder="Search club, project name, venue, submitter..."
+                      value={masterSearchQuery}
+                      onChange={(e) => setMasterSearchQuery(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: '100px', border: '1px solid rgba(216,27,96,0.25)', fontSize: '0.86rem', outline: 'none' }}
+                    />
+                  </div>
+
+                  {/* Status Filters */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
+                    <button
+                      onClick={() => setMasterStatusFilter('all')}
+                      style={{
+                        background: masterStatusFilter === 'all' ? 'var(--rotaract-pink)' : '#F1F5F9',
+                        color: masterStatusFilter === 'all' ? '#FFFFFF' : '#475569',
+                        border: 'none',
+                        padding: '7px 14px',
+                        borderRadius: '100px',
+                        fontSize: '0.78rem',
+                        fontWeight: 800,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      All ({clubSubmissions.length})
+                    </button>
+                    <button
+                      onClick={() => setMasterStatusFilter('reported')}
+                      style={{
+                        background: masterStatusFilter === 'reported' ? '#166534' : '#F0FDF4',
+                        color: masterStatusFilter === 'reported' ? '#FFFFFF' : '#166534',
+                        border: 'none',
+                        padding: '7px 14px',
+                        borderRadius: '100px',
+                        fontSize: '0.78rem',
+                        fontWeight: 800,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Submitted ({clubSubmissions.filter(s => s.status === 'reported').length})
+                    </button>
+                    <button
+                      onClick={() => setMasterStatusFilter('flagged')}
+                      style={{
+                        background: masterStatusFilter === 'flagged' ? '#E11D48' : '#FFF1F2',
+                        color: masterStatusFilter === 'flagged' ? '#FFFFFF' : '#E11D48',
+                        border: 'none',
+                        padding: '7px 14px',
+                        borderRadius: '100px',
+                        fontSize: '0.78rem',
+                        fontWeight: 800,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Flagged ({clubSubmissions.filter(s => s.status === 'flagged').length})
+                    </button>
+                    {(!isDistrictOfficer || clubSubmissions.some(s => s.status === 'draft')) && (
+                      <button
+                        onClick={() => setMasterStatusFilter('draft')}
+                        style={{
+                          background: masterStatusFilter === 'draft' ? '#0284C7' : '#F0F9FF',
+                          color: masterStatusFilter === 'draft' ? '#FFFFFF' : '#0284C7',
+                          border: 'none',
+                          padding: '7px 14px',
+                          borderRadius: '100px',
+                          fontSize: '0.78rem',
+                          fontWeight: 800,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Drafts ({clubSubmissions.filter(s => s.status === 'draft').length})
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Month Filter Dropdown */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--rotaract-pink)' }}>Month:</span>
+                    <select
+                      value={masterMonthFilter}
+                      onChange={(e) => setMasterMonthFilter(e.target.value)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(216,27,96,0.25)',
+                        backgroundColor: '#FFFFFF',
+                        color: 'var(--rotaract-pink)',
+                        fontWeight: 800,
+                        fontSize: '0.82rem',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="all">All Months</option>
+                      {MONTH_OPTIONS.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* LIST OF MONTHLY REPORTS */}
             <div className="rotaract-card" style={{ padding: isMobile ? '16px 12px' : isTablet ? '20px' : '28px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <h4 style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  {isDistrictOfficer ? `All Monthly Reports (${submissions.length})` : `My Club Monthly Reports (${clubSubmissions.length})`}
+                  {isDistrictOfficer 
+                    ? `Matching Monthly Reports (${displayedReports.length} of ${clubSubmissions.length})` 
+                    : `My Club Monthly Reports (${displayedReports.length} of ${clubSubmissions.length})`}
                 </h4>
               </div>
 
-              {clubSubmissions.length === 0 ? (
+              {displayedReports.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
                   <FileText size={40} style={{ margin: '0 auto 12px auto', opacity: 0.5 }} />
-                  <div style={{ fontSize: '1rem', fontWeight: 700 }}>No monthly reports submitted yet.</div>
-                  <div style={{ fontSize: '0.85rem', marginTop: '4px' }}>Click "+ Submit Monthly Project Report" to log your first report.</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700 }}>No monthly reports found.</div>
+                  <div style={{ fontSize: '0.85rem', marginTop: '4px' }}>
+                    {isDistrictOfficer 
+                      ? 'Try adjusting your search criteria or month filter.' 
+                      : 'Click "+ Submit Monthly Report" to log your first report.'}
+                  </div>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {clubSubmissions.map((report) => {
+                  {displayedReports.map((report) => {
                     const totalProjs = Object.values(report.sections || {}).reduce((sum, arr) => sum + (arr ? arr.length : 0), 0);
                     const isExpanded = expandedReportId === report.id;
 
@@ -762,9 +1188,13 @@ export default function PortalPage({
                       <div 
                         key={report.id} 
                         style={{ 
-                          background: report.status === 'flagged' ? '#FFF1F2' : '#FFFFFF', 
+                          background: report.status === 'flagged' ? '#FFF1F2' : report.status === 'draft' ? '#F0F9FF' : '#FFFFFF', 
                           borderRadius: '20px', 
-                          border: report.status === 'flagged' ? '2px solid #FECDD3' : '1px solid rgba(216, 27, 96, 0.18)',
+                          border: report.status === 'flagged' 
+                            ? '2px solid #FECDD3' 
+                            : report.status === 'draft'
+                            ? '2px solid #BAE6FD'
+                            : '1px solid rgba(216, 27, 96, 0.18)',
                           boxShadow: '0 4px 20px rgba(216, 27, 96, 0.04)',
                           overflow: 'hidden',
                           transition: 'all 0.3s ease'
@@ -779,7 +1209,7 @@ export default function PortalPage({
                           alignItems: isMobile ? 'stretch' : 'center',
                           gap: '14px',
                           borderBottom: isExpanded ? '1px solid rgba(216, 27, 96, 0.12)' : 'none',
-                          background: report.status === 'flagged' ? '#FFF1F2' : '#FDF5F8'
+                          background: report.status === 'flagged' ? '#FFF1F2' : report.status === 'draft' ? '#F0F9FF' : '#FDF5F8'
                         }}>
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
@@ -805,6 +1235,10 @@ export default function PortalPage({
                               <span style={{ background: '#FFE4E6', color: '#E11D48', border: '1px solid #FECDD3', padding: '6px 12px', borderRadius: '100px', fontSize: '0.76rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                 <Flag size={13} /> Flagged
                               </span>
+                            ) : report.status === 'draft' ? (
+                              <span style={{ background: '#E0F2FE', color: '#0369A1', border: '1px solid #BAE6FD', padding: '6px 12px', borderRadius: '100px', fontSize: '0.76rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <Clock size={13} /> Draft
+                              </span>
                             ) : (
                               <span style={{ background: '#F0FDF4', color: '#166534', border: '1px solid #BBF7D0', padding: '6px 12px', borderRadius: '100px', fontSize: '0.76rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                 <CheckCircle2 size={13} /> Submitted
@@ -813,10 +1247,7 @@ export default function PortalPage({
 
                             {isDistrictOfficer && (
                               <button
-                                onClick={() => {
-                                  setFlaggingSub(report);
-                                  setFlagComment(report.flagComment || '');
-                                }}
+                                onClick={() => handleOpenFlagModal(report)}
                                 style={{
                                   background: report.status === 'flagged' ? '#E11D48' : '#FFFFFF',
                                   color: report.status === 'flagged' ? '#FFFFFF' : '#E11D48',
@@ -832,7 +1263,7 @@ export default function PortalPage({
                                   minHeight: '38px'
                                 }}
                               >
-                                <Flag size={13} /> {report.status === 'flagged' ? 'Edit Flag' : 'Flag'}
+                                <Flag size={13} /> {report.status === 'flagged' ? 'Edit Flag' : 'Flag Report'}
                               </button>
                             )}
 
@@ -843,6 +1274,28 @@ export default function PortalPage({
                                 style={{ padding: '6px 14px', fontSize: '0.78rem', minHeight: '38px' }}
                               >
                                 Edit & Re-submit
+                              </button>
+                            )}
+
+                            {!isDistrictOfficer && report.status === 'draft' && (
+                              <button
+                                onClick={() => handleOpenEditReport(report)}
+                                style={{
+                                  background: '#0284C7',
+                                  color: '#FFFFFF',
+                                  border: 'none',
+                                  padding: '6px 14px',
+                                  borderRadius: '100px',
+                                  fontSize: '0.78rem',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  minHeight: '38px'
+                                }}
+                              >
+                                Resume / Edit Draft
                               </button>
                             )}
 
@@ -893,29 +1346,58 @@ export default function PortalPage({
                           </div>
                         </div>
 
-                        {/* FLAGGED NOTE COMMENT */}
-                        {report.status === 'flagged' && report.flagComment && (
-                          <div style={{ background: '#FFF1F2', borderLeft: '4px solid #E11D48', padding: '12px 16px', fontSize: '0.84rem', color: '#9F1239' }}>
-                            <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-                              <MessageSquare size={14} /> District Feedback:
+                        {/* FLAGGED DETAILS BANNER */}
+                        {report.status === 'flagged' && (report.flagComment || report.flagReason) && (
+                          <div style={{ background: '#FFF1F2', borderLeft: '5px solid #E11D48', padding: '14px 18px', fontSize: '0.86rem', color: '#9F1239' }}>
+                            <div style={{ fontWeight: 900, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', color: '#BE123C' }}>
+                              <AlertTriangle size={16} /> Flagged by {report.flaggedBy || 'District Secretariat'} {report.flaggedAt ? `on ${report.flaggedAt}` : ''}
                             </div>
-                            "{report.flagComment}"
+                            {report.flagReason && (
+                              <div style={{ fontSize: '0.80rem', fontWeight: 800, color: '#E11D48', marginBottom: '4px' }}>
+                                Reason: <strong>{report.flagReason}</strong>
+                              </div>
+                            )}
+                            {report.flagComment && (
+                              <div style={{ fontSize: '0.84rem', marginTop: '4px', fontStyle: 'italic' }}>
+                                "{report.flagComment}"
+                              </div>
+                            )}
                           </div>
                         )}
 
-                        {/* EXPANDED SECTION BREAKDOWN */}
-                        {isExpanded && (
+                        {/* EXPANDED SECTION BREAKDOWN WITH SMOOTH ANIMATION */}
+                        <div style={{
+                          maxHeight: isExpanded ? '5000px' : '0px',
+                          opacity: isExpanded ? 1 : 0,
+                          overflow: 'hidden',
+                          transition: 'max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease'
+                        }}>
                           <div style={{ padding: isMobile ? '16px 12px' : '24px', backgroundColor: '#FFFFFF', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                             {REPORT_SECTIONS.map((sec) => {
                               const secProjects = report.sections?.[sec.id] || [];
+                              const isSectionFlagged = report.sectionFlags?.[sec.id];
+
                               return (
-                                <div key={sec.id} style={{ background: '#FDF8FA', border: '1px solid rgba(216, 27, 96, 0.12)', borderRadius: '16px', padding: isMobile ? '14px 10px' : '20px' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid rgba(216, 27, 96, 0.1)', paddingBottom: '8px' }}>
+                                <div 
+                                  key={sec.id} 
+                                  style={{ 
+                                    background: isSectionFlagged ? '#FFF1F2' : '#FDF8FA', 
+                                    border: isSectionFlagged ? '2px solid #FECDD3' : '1px solid rgba(216, 27, 96, 0.12)', 
+                                    borderRadius: '16px', 
+                                    padding: isMobile ? '14px 10px' : '20px' 
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid rgba(216, 27, 96, 0.1)', paddingBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                       <span style={{ color: 'var(--rotaract-pink)' }}>{SECTION_ICONS[sec.id]}</span>
                                       <h5 style={{ fontSize: isMobile ? '0.98rem' : '1.1rem', fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
                                         {sec.label}
                                       </h5>
+                                      {isSectionFlagged && (
+                                        <span style={{ background: '#FFE4E6', color: '#E11D48', border: '1px solid #FECDD3', padding: '2px 8px', borderRadius: '6px', fontSize: '0.70rem', fontWeight: 800 }}>
+                                          ⚠️ Flagged for Revision
+                                        </span>
+                                      )}
                                     </div>
                                     <span className="pill-pink" style={{ fontSize: '0.72rem' }}>
                                       {secProjects.length} Projects
@@ -956,7 +1438,7 @@ export default function PortalPage({
                                           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '4px', paddingTop: '6px', borderTop: '1px dashed #E2E8F0' }}>
                                             {proj.showcaseLink && (
                                               <a href={proj.showcaseLink} target="_blank" rel="noreferrer" style={{ fontSize: '0.76rem', color: '#123499', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}>
-                                                <Link2 size={12} /> Rotary Showcase <ExternalLink size={10} />
+                                                <Globe size={12} /> Rotary Service Project Center <ExternalLink size={10} />
                                               </a>
                                             )}
 
@@ -974,7 +1456,7 @@ export default function PortalPage({
                               );
                             })}
                           </div>
-                        )}
+                        </div>
                       </div>
                     );
                   })}
@@ -1020,14 +1502,26 @@ export default function PortalPage({
               </div>
             </div>
 
-            {/* KPI STAT CARDS */}
+            {/* KPI STAT CARDS (CLICKABLE FILTERS) */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
               gap: isMobile ? '10px' : '16px',
               marginBottom: isMobile ? '20px' : '28px'
             }}>
-              <div style={{ background: '#FFFFFF', border: '1px solid rgba(216, 27, 96, 0.18)', borderRadius: '16px', padding: isMobile ? '14px 12px' : '20px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
+              <div 
+                onClick={() => setComplianceFilter('all')}
+                style={{ 
+                  background: '#FFFFFF', 
+                  border: complianceFilter === 'all' ? '2.5px solid var(--rotaract-pink)' : '1px solid rgba(216, 27, 96, 0.18)', 
+                  borderRadius: '16px', 
+                  padding: isMobile ? '14px 12px' : '20px', 
+                  boxShadow: complianceFilter === 'all' ? '0 8px 24px rgba(216, 27, 96, 0.18)' : '0 4px 14px rgba(0,0,0,0.03)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  transform: complianceFilter === 'all' ? 'translateY(-2px)' : 'none'
+                }}
+              >
                 <div style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                   Total Clubs
                 </div>
@@ -1035,11 +1529,23 @@ export default function PortalPage({
                   {totalClubsCount} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Active</span>
                 </div>
                 <div style={{ fontSize: '0.74rem', color: 'var(--rotaract-pink)', marginTop: '4px', fontWeight: 700 }}>
-                  3 Regional Zones
+                  Click to show all ({totalClubsCount})
                 </div>
               </div>
 
-              <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '16px', padding: isMobile ? '14px 12px' : '20px' }}>
+              <div 
+                onClick={() => setComplianceFilter('submitted')}
+                style={{ 
+                  background: '#F0FDF4', 
+                  border: complianceFilter === 'submitted' ? '2.5px solid #166534' : '1px solid #BBF7D0', 
+                  borderRadius: '16px', 
+                  padding: isMobile ? '14px 12px' : '20px',
+                  boxShadow: complianceFilter === 'submitted' ? '0 8px 24px rgba(22, 101, 52, 0.20)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  transform: complianceFilter === 'submitted' ? 'translateY(-2px)' : 'none'
+                }}
+              >
                 <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>
                   Submitted ({complianceMonth})
                 </div>
@@ -1047,11 +1553,23 @@ export default function PortalPage({
                   {submittedClubsCount} <span style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 600 }}>({complianceRate}%)</span>
                 </div>
                 <div style={{ fontSize: '0.74rem', color: '#166534', marginTop: '4px', fontWeight: 700 }}>
-                  Verified Reports
+                  Click to filter submitted ({submittedClubsCount})
                 </div>
               </div>
 
-              <div style={{ background: '#FFF1F2', border: '1px solid #FECDD3', borderRadius: '16px', padding: isMobile ? '14px 12px' : '20px' }}>
+              <div 
+                onClick={() => setComplianceFilter('pending')}
+                style={{ 
+                  background: '#FFF1F2', 
+                  border: complianceFilter === 'pending' ? '2.5px solid #E11D48' : '1px solid #FECDD3', 
+                  borderRadius: '16px', 
+                  padding: isMobile ? '14px 12px' : '20px',
+                  boxShadow: complianceFilter === 'pending' ? '0 8px 24px rgba(225, 29, 72, 0.20)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  transform: complianceFilter === 'pending' ? 'translateY(-2px)' : 'none'
+                }}
+              >
                 <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#9F1239', textTransform: 'uppercase' }}>
                   Pending
                 </div>
@@ -1059,11 +1577,23 @@ export default function PortalPage({
                   {pendingClubsCount} <span style={{ fontSize: '0.8rem', color: '#9F1239', fontWeight: 600 }}>({100 - complianceRate}%)</span>
                 </div>
                 <div style={{ fontSize: '0.74rem', color: '#9F1239', marginTop: '4px', fontWeight: 700 }}>
-                  Awaiting Report
+                  Click to filter pending ({pendingClubsCount})
                 </div>
               </div>
 
-              <div style={{ background: '#FEFCE8', border: '1px solid #FEF08A', borderRadius: '16px', padding: isMobile ? '14px 12px' : '20px' }}>
+              <div 
+                onClick={() => setComplianceFilter('flagged')}
+                style={{ 
+                  background: '#FEFCE8', 
+                  border: complianceFilter === 'flagged' ? '2.5px solid #CA8A04' : '1px solid #FEF08A', 
+                  borderRadius: '16px', 
+                  padding: isMobile ? '14px 12px' : '20px',
+                  boxShadow: complianceFilter === 'flagged' ? '0 8px 24px rgba(202, 138, 4, 0.20)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  transform: complianceFilter === 'flagged' ? 'translateY(-2px)' : 'none'
+                }}
+              >
                 <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#854D0E', textTransform: 'uppercase' }}>
                   Flagged
                 </div>
@@ -1071,7 +1601,7 @@ export default function PortalPage({
                   {flaggedClubsCount} <span style={{ fontSize: '0.8rem', color: '#854D0E', fontWeight: 600 }}>Clubs</span>
                 </div>
                 <div style={{ fontSize: '0.74rem', color: '#854D0E', marginTop: '4px', fontWeight: 700 }}>
-                  Needs Revision
+                  Click to filter flagged ({flaggedClubsCount})
                 </div>
               </div>
             </div>
@@ -1280,6 +1810,11 @@ export default function PortalPage({
                               <Flag size={12} /> Flagged
                             </span>
                           )}
+                          {status === 'draft' && (
+                            <span style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                              <Clock size={12} /> Draft
+                            </span>
+                          )}
                           {status === 'pending' && (
                             <span style={{ background: '#FFF1F2', color: '#9F1239', border: '1px solid #FECDD3', padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                               <Clock size={12} /> Pending
@@ -1289,10 +1824,15 @@ export default function PortalPage({
 
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '10px', background: '#F8FAFC', padding: '8px 10px', borderRadius: '8px' }}>
                           <div><strong>President:</strong> {club.president || 'Rtr. President'}</div>
-                          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{club.email || 'techrid3011@gmail.com'}</div>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{club.email || club.secretaryEmail || 'No contact email'}</div>
                           {status === 'submitted' && (
                             <div style={{ fontSize: '0.74rem', color: '#166534', marginTop: '3px', fontWeight: 700 }}>
                               {totalProjs} Projects • Submitted {report?.submittedAt}
+                            </div>
+                          )}
+                          {status === 'draft' && (
+                            <div style={{ fontSize: '0.74rem', color: '#92400E', marginTop: '3px', fontWeight: 700 }}>
+                              {totalProjs} Projects in Draft
                             </div>
                           )}
                         </div>
@@ -1417,7 +1957,7 @@ export default function PortalPage({
                             {/* President Contact */}
                             <td style={{ padding: '16px 20px', color: 'var(--text-secondary)' }}>
                               <div style={{ fontWeight: 700 }}>{club.president || 'Rtr. President'}</div>
-                              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{club.email || 'techrid3011@gmail.com'}</div>
+                              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{club.email || club.secretaryEmail || 'No contact email'}</div>
                             </td>
 
                             {/* Status */}
@@ -1440,6 +1980,17 @@ export default function PortalPage({
                                   </span>
                                   <div style={{ fontSize: '0.75rem', color: '#9F1239', marginTop: '4px' }}>
                                     "{report?.flagComment || 'Needs revision'}"
+                                  </div>
+                                </div>
+                              )}
+
+                              {status === 'draft' && (
+                                <div>
+                                  <span style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', padding: '4px 12px', borderRadius: '100px', fontSize: '0.78rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                    <Clock size={13} /> Draft in Progress
+                                  </span>
+                                  <div style={{ fontSize: '0.75rem', color: '#92400E', marginTop: '4px' }}>
+                                    {totalProjs} Projects in Draft • Not yet submitted
                                   </div>
                                 </div>
                               )}
@@ -1647,17 +2198,6 @@ export default function PortalPage({
               </div>
 
               {(() => {
-                const TEST_GROUP_EMAILS = [
-                  'itsdrrarchit@gmail.com',
-                  'sarthakmanchanda2@gmail.com',
-                  'rtrshefali2004@gmail.com',
-                  'himanshugulati.rotary@gmail.com',
-                  'harshitam2636@gmail.com',
-                  'jasraj2626@gmail.com',
-                  'rtrdivyanshu3011@gmail.com',
-                  'dhruvika038@gmail.com'
-                ];
-
                 const visibleAnnouncements = announcements.filter(anno => {
                   if (isDistrictOfficer) return true; // District Officers see all announcements
                   
@@ -1665,13 +2205,12 @@ export default function PortalPage({
                   if (target === 'all') return true;
 
                   const userPost = (userSession?.post || '').toLowerCase();
-                  const userEmail = (userSession?.email || '').toLowerCase();
                   const uRole = (userSession?.role || '').toLowerCase();
 
-                  if (target === 'presidents' && userPost.includes('president')) return true;
-                  if (target === 'secretaries' && userPost.includes('secretary')) return true;
+                  if (target === 'presidents' && (userPost.includes('president') || uRole.includes('president'))) return true;
+                  if (target === 'secretaries' && (userPost.includes('secretary') || uRole.includes('secretary'))) return true;
                   if (target === 'dac' && (uRole === 'officer' || uRole === 'dac_member')) return true;
-                  if (target === 'test_group' && TEST_GROUP_EMAILS.some(e => e.toLowerCase() === userEmail)) return true;
+                  if (target === 'test_group' && Boolean(userSession?.isTestGroup || isDistrictOfficer)) return true;
 
                   return false;
                 });
@@ -1707,9 +2246,29 @@ export default function PortalPage({
                               Target: {item.targetAudience === 'test_group' ? 'Test Group' : (item.targetAudience || 'All')}
                             </span>
                           </div>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                            {item.date} • Issued by <strong style={{ color: 'var(--rotaract-pink)' }}>{item.author || 'District Secretariat'}</strong>
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                              {item.date} • Issued by <strong style={{ color: 'var(--rotaract-pink)' }}>{item.author || 'District Secretariat'}</strong>
+                            </span>
+                            {isDistrictOfficer && (
+                              <button
+                                onClick={() => handleDeleteAnnouncement(item.id)}
+                                title="Delete announcement"
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: '#EF4444',
+                                  cursor: 'pointer',
+                                  padding: '4px',
+                                  borderRadius: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <h4 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>
                           {item.title}
@@ -1770,20 +2329,76 @@ export default function PortalPage({
 
             {/* Studio Header */}
             <div style={{ marginBottom: '24px', borderBottom: '1px solid rgba(216,27,96,0.15)', paddingBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '6px' }}>
                 <span className="pill-pink" style={{ fontSize: '0.76rem' }}>
                   PRESIDENT & SECRETARY REPORTING STUDIO
                 </span>
+                
+                {/* Live Auto-Save Status Indicator */}
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: autoSaveStatus === 'saving' ? '#FEFCE8' : autoSaveStatus === 'saved' ? '#F0FDF4' : '#F8FAFC',
+                  border: autoSaveStatus === 'saving' ? '1px solid #FEF08A' : autoSaveStatus === 'saved' ? '1px solid #BBF7D0' : '1px solid #E2E8F0',
+                  color: autoSaveStatus === 'saving' ? '#854D0E' : autoSaveStatus === 'saved' ? '#166534' : '#64748B',
+                  padding: '4px 10px',
+                  borderRadius: '100px',
+                  fontSize: '0.74rem',
+                  fontWeight: 800
+                }}>
+                  {autoSaveStatus === 'saving' ? (
+                    <>
+                      <Clock size={12} className="spin" />
+                      <span>Saving draft...</span>
+                    </>
+                  ) : autoSaveStatus === 'saved' ? (
+                    <>
+                      <CheckCircle2 size={12} />
+                      <span>Draft auto-saved {lastAutoSavedTime ? `at ${lastAutoSavedTime}` : ''}</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileText size={12} />
+                      <span>Draft ready</span>
+                    </>
+                  )}
+                </div>
               </div>
+
               <h3 style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
                 {editingReportId ? 'Edit & Re-submit Monthly Report' : 'Submit Monthly Project Report'}
               </h3>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginTop: '4px' }}>
-                Select the reporting month and add projects under each of the 6 avenues of service.
+                Select the reporting month and add projects under each of the 6 avenues of service. Your work is automatically saved locally as you type.
               </p>
             </div>
 
-            <form onSubmit={handleSubmitMonthlyReport}>
+            {/* Global Form Validation Error Alert */}
+            {formErrorMessage && (
+              <div style={{
+                background: '#FFF1F2',
+                border: '1.5px solid #FECDD3',
+                borderRadius: '14px',
+                padding: '14px 18px',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '12px'
+              }}>
+                <AlertTriangle size={20} color="#E11D48" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <div style={{ fontSize: '0.90rem', fontWeight: 900, color: '#BE123C' }}>
+                    Submission Validation Notice
+                  </div>
+                  <div style={{ fontSize: '0.84rem', color: '#9F1239', marginTop: '2px', lineHeight: 1.4 }}>
+                    {formErrorMessage}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={(e) => e.preventDefault()}>
               {/* Step 1: Select Reporting Month */}
               <div style={{ background: '#FDF5F8', border: '1px solid rgba(216, 27, 96, 0.2)', padding: '16px 20px', borderRadius: '16px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
                 <div>
@@ -1797,7 +2412,7 @@ export default function PortalPage({
 
                 <select
                   value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  onChange={(e) => handleSelectMonthInStudio(e.target.value)}
                   style={{
                     padding: '10px 20px',
                     borderRadius: '10px',
@@ -1810,9 +2425,17 @@ export default function PortalPage({
                     cursor: 'pointer'
                   }}
                 >
-                  {MONTH_OPTIONS.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
+                  {MONTH_OPTIONS.map(m => {
+                    const existingForMonth = submissions.find(s => {
+                      if (s.month !== m) return false;
+                      const subClub = (s.clubName || '').toLowerCase().replace(/rotaract|club|of|\s+/g, '');
+                      return userClubName.length > 3 && subClub.includes(userClubName);
+                    });
+                    const badge = existingForMonth ? (existingForMonth.status === 'flagged' ? ' ⚠️ [Flagged]' : existingForMonth.status === 'draft' ? ' 📝 [Draft]' : ' ✅ [Submitted]') : '';
+                    return (
+                      <option key={m} value={m}>{m}{badge}</option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -1826,15 +2449,17 @@ export default function PortalPage({
                 {REPORT_SECTIONS.map((sec) => {
                   const count = (sectionsData[sec.id] || []).length;
                   const isActive = activeFormSection === sec.id;
+                  const hasSectionErrors = !!validationErrors[sec.id] && Object.keys(validationErrors[sec.id]).length > 0;
+
                   return (
                     <button
                       key={sec.id}
                       type="button"
                       onClick={() => setActiveFormSection(sec.id)}
                       style={{
-                        background: isActive ? 'var(--rotaract-pink)' : '#F8FAFC',
-                        color: isActive ? '#FFFFFF' : '#475569',
-                        border: isActive ? '2px solid var(--rotaract-pink)' : '1px solid #E2E8F0',
+                        background: isActive ? 'var(--rotaract-pink)' : hasSectionErrors ? '#FFF1F2' : '#F8FAFC',
+                        color: isActive ? '#FFFFFF' : hasSectionErrors ? '#BE123C' : '#475569',
+                        border: isActive ? '2px solid var(--rotaract-pink)' : hasSectionErrors ? '2px solid #FECDD3' : '1px solid #E2E8F0',
                         borderRadius: '12px',
                         padding: isMobile ? '8px 4px' : '10px 8px',
                         fontSize: isMobile ? '0.72rem' : '0.8rem',
@@ -1845,9 +2470,13 @@ export default function PortalPage({
                         alignItems: 'center',
                         gap: '4px',
                         transition: 'all 0.2s ease',
-                        minHeight: isMobile ? '56px' : 'auto'
+                        minHeight: isMobile ? '56px' : 'auto',
+                        position: 'relative'
                       }}
                     >
+                      {hasSectionErrors && (
+                        <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '10px', height: '10px', background: '#E11D48', borderRadius: '50%', border: '2px solid #FFFFFF' }} />
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', textAlign: 'center' }}>
                         {SECTION_ICONS[sec.id]}
                         <span style={{ whiteSpace: 'normal', lineHeight: 1.2 }}>{sec.label}</span>
@@ -1855,7 +2484,7 @@ export default function PortalPage({
                       <span 
                         style={{ 
                           fontSize: '0.68rem', 
-                          background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.06)',
+                          background: isActive ? 'rgba(255,255,255,0.25)' : hasSectionErrors ? '#FFE4E6' : 'rgba(0,0,0,0.06)',
                           padding: '1px 6px',
                           borderRadius: '100px'
                         }}
@@ -1871,13 +2500,14 @@ export default function PortalPage({
               {(() => {
                 const currentSecObj = REPORT_SECTIONS.find(s => s.id === activeFormSection);
                 const projects = sectionsData[activeFormSection] || [];
+                const secErrors = validationErrors[activeFormSection] || {};
 
                 return (
-                  <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '20px', padding: '24px', marginBottom: '24px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '20px', padding: isMobile ? '16px 12px' : '24px', marginBottom: '24px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <span style={{ color: 'var(--rotaract-pink)' }}>{SECTION_ICONS[activeFormSection]}</span>
-                        <h4 style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
+                        <h4 style={{ fontSize: isMobile ? '1.1rem' : '1.25rem', fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
                           {currentSecObj.label} Projects
                         </h4>
                       </div>
@@ -1905,22 +2535,23 @@ export default function PortalPage({
 
                     {projects.length === 0 ? (
                       <div style={{ textAlign: 'center', padding: '30px 20px', background: '#FFFFFF', borderRadius: '16px', border: '1px dashed #CBD5E1', color: '#64748B' }}>
-                        <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>No projects added under {currentSecObj.label} yet.</div>
-                        <div style={{ fontSize: '0.8rem', marginTop: '4px' }}>Click "+ Add Project" above to create an entry for this section.</div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>0 projects added under {currentSecObj.label} for {selectedMonth}.</div>
+                        <div style={{ fontSize: '0.8rem', marginTop: '4px' }}>Click "+ Add Project to {currentSecObj.label}" above if you organized an event in this avenue.</div>
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                         {projects.map((proj, pIdx) => {
                           const wordCount = getWordCount(proj.description);
+                          const projErrors = secErrors[proj.id] || {};
 
                           return (
                             <div 
                               key={proj.id} 
                               style={{ 
                                 background: '#FFFFFF', 
-                                border: '1px solid #E2E8F0', 
+                                border: Object.keys(projErrors).length > 0 ? '1.5px solid #FECDD3' : '1px solid #E2E8F0', 
                                 borderRadius: '16px', 
-                                padding: '20px',
+                                padding: isMobile ? '16px 12px' : '20px',
                                 boxShadow: '0 4px 14px rgba(0,0,0,0.03)',
                                 position: 'relative'
                               }}
@@ -1939,7 +2570,7 @@ export default function PortalPage({
                                 </button>
                               </div>
 
-                              {/* 12 PROJECT FIELDS */}
+                              {/* 12 PROJECT FIELDS WITH INLINE VALIDATION HIGHLIGHTS */}
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                                   
                                   {/* Row 1: Event Name & Date */}
@@ -1948,52 +2579,86 @@ export default function PortalPage({
                                       <label style={labelStyle}>1. Event Name *</label>
                                       <input
                                         type="text"
-                                        required
                                         placeholder="e.g. Mahadan 9.0 Blood Camp"
                                         value={proj.eventName}
                                         onChange={(e) => handleUpdateProjectField(activeFormSection, proj.id, 'eventName', e.target.value)}
-                                        style={inputStyle}
+                                        style={{
+                                          ...inputStyle,
+                                          border: projErrors.eventName ? '1.5px solid #E11D48' : '1px solid rgba(216, 27, 96, 0.25)',
+                                          backgroundColor: projErrors.eventName ? '#FFF1F2' : '#FFFFFF'
+                                        }}
                                       />
+                                      {projErrors.eventName && (
+                                        <span style={{ color: '#E11D48', fontSize: '0.74rem', fontWeight: 700, marginTop: '3px', display: 'block' }}>
+                                          {projErrors.eventName}
+                                        </span>
+                                      )}
                                     </div>
                                     <div>
                                       <label style={labelStyle}>2. Event Date *</label>
                                       <input
                                         type="date"
-                                        required
                                         value={proj.date}
                                         onChange={(e) => handleUpdateProjectField(activeFormSection, proj.id, 'date', e.target.value)}
-                                        style={inputStyle}
+                                        style={{
+                                          ...inputStyle,
+                                          border: projErrors.date ? '1.5px solid #E11D48' : '1px solid rgba(216, 27, 96, 0.25)',
+                                          backgroundColor: projErrors.date ? '#FFF1F2' : '#FFFFFF'
+                                        }}
                                       />
+                                      {projErrors.date && (
+                                        <span style={{ color: '#E11D48', fontSize: '0.74rem', fontWeight: 700, marginTop: '3px', display: 'block' }}>
+                                          {projErrors.date}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
 
                                   {/* Row 2: Venue & Area of Focus */}
                                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                                     <div>
-                                      <label style={labelStyle}>3. Venue Location</label>
+                                      <label style={labelStyle}>3. Venue Location *</label>
                                       <input
                                         type="text"
                                         placeholder="e.g. Connaught Place Metro Station"
                                         value={proj.venue}
                                         onChange={(e) => handleUpdateProjectField(activeFormSection, proj.id, 'venue', e.target.value)}
-                                        style={inputStyle}
+                                        style={{
+                                          ...inputStyle,
+                                          border: projErrors.venue ? '1.5px solid #E11D48' : '1px solid rgba(216, 27, 96, 0.25)',
+                                          backgroundColor: projErrors.venue ? '#FFF1F2' : '#FFFFFF'
+                                        }}
                                       />
+                                      {projErrors.venue && (
+                                        <span style={{ color: '#E11D48', fontSize: '0.74rem', fontWeight: 700, marginTop: '3px', display: 'block' }}>
+                                          {projErrors.venue}
+                                        </span>
+                                      )}
                                     </div>
                                     <div>
                                       <label style={labelStyle}>4. Rotary Area of Focus *</label>
                                       <select
                                         value={proj.areaOfFocus}
                                         onChange={(e) => handleUpdateProjectField(activeFormSection, proj.id, 'areaOfFocus', e.target.value)}
-                                        style={{ ...inputStyle, backgroundColor: '#FFFFFF' }}
+                                        style={{
+                                          ...inputStyle,
+                                          backgroundColor: '#FFFFFF',
+                                          border: projErrors.areaOfFocus ? '1.5px solid #E11D48' : '1px solid rgba(216, 27, 96, 0.25)'
+                                        }}
                                       >
                                         {FOCUS_AREA_OPTIONS.map(f => (
                                           <option key={f} value={f}>{f}</option>
                                         ))}
                                       </select>
+                                      {projErrors.areaOfFocus && (
+                                        <span style={{ color: '#E11D48', fontSize: '0.74rem', fontWeight: 700, marginTop: '3px', display: 'block' }}>
+                                          {projErrors.areaOfFocus}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
 
-                                  {/* Row 3: Club Strength & Initiated By */}
+                                  {/* Row 3: Club Strength, Initiated By & Beneficiary Count */}
                                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? '1fr 1fr' : '1fr 1fr 1fr', gap: '12px' }}>
                                     <div>
                                       <label style={labelStyle}>5. Club Strength at Event</label>
@@ -2063,41 +2728,68 @@ export default function PortalPage({
                                     </div>
                                     <textarea
                                       rows={3}
-                                      required
                                       placeholder="Provide a concise 40-word summary of project objectives, execution strategy, and measurable community outcomes..."
                                       value={proj.description}
                                       onChange={(e) => handleUpdateProjectField(activeFormSection, proj.id, 'description', e.target.value)}
-                                      style={{ ...inputStyle, resize: 'none' }}
+                                      style={{
+                                        ...inputStyle,
+                                        resize: 'none',
+                                        border: projErrors.description ? '1.5px solid #E11D48' : '1px solid rgba(216, 27, 96, 0.25)',
+                                        backgroundColor: projErrors.description ? '#FFF1F2' : '#FFFFFF'
+                                      }}
                                     />
+                                    {projErrors.description && (
+                                      <span style={{ color: '#E11D48', fontSize: '0.74rem', fontWeight: 700, marginTop: '3px', display: 'block' }}>
+                                        {projErrors.description}
+                                      </span>
+                                    )}
                                   </div>
 
-                                  {/* Row 6: Rotary Showcase Link & Drive Media Link */}
+                                  {/* Row 6: Rotary Service Project Center Link & Drive Media Link */}
                                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
                                     <div>
-                                      <label style={labelStyle}>11. Rotary Showcase Link (URL)</label>
+                                      <label style={labelStyle}>11. Rotary Service Project Center Link (URL)</label>
                                       <input
                                         type="url"
-                                        placeholder="https://showcase.rotary.org/project/..."
+                                        placeholder="https://rotary.org/service-project-center/..."
                                         value={proj.showcaseLink}
                                         onChange={(e) => handleUpdateProjectField(activeFormSection, proj.id, 'showcaseLink', e.target.value)}
-                                        style={inputStyle}
+                                        style={{
+                                          ...inputStyle,
+                                          border: projErrors.showcaseLink ? '1.5px solid #E11D48' : '1px solid rgba(216, 27, 96, 0.25)',
+                                          backgroundColor: projErrors.showcaseLink ? '#FFF1F2' : '#FFFFFF'
+                                        }}
                                       />
+                                      {projErrors.showcaseLink && (
+                                        <span style={{ color: '#E11D48', fontSize: '0.74rem', fontWeight: 700, marginTop: '3px', display: 'block' }}>
+                                          {projErrors.showcaseLink}
+                                        </span>
+                                      )}
                                     </div>
                                     <div>
-                                      <label style={labelStyle}>12. Google Drive Link (Photos & Videos)</label>
+                                      <label style={labelStyle}>12. Google Drive Link (Photos & Videos URL)</label>
                                       <input
                                         type="url"
                                         placeholder="https://drive.google.com/drive/folders/..."
                                         value={proj.driveLink || ''}
                                         onChange={(e) => handleUpdateProjectField(activeFormSection, proj.id, 'driveLink', e.target.value)}
-                                        style={inputStyle}
+                                        style={{
+                                          ...inputStyle,
+                                          border: projErrors.driveLink ? '1.5px solid #E11D48' : '1px solid rgba(216, 27, 96, 0.25)',
+                                          backgroundColor: projErrors.driveLink ? '#FFF1F2' : '#FFFFFF'
+                                        }}
                                       />
+                                      {projErrors.driveLink && (
+                                        <span style={{ color: '#E11D48', fontSize: '0.74rem', fontWeight: 700, marginTop: '3px', display: 'block' }}>
+                                          {projErrors.driveLink}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
 
-                                </div>
                               </div>
-                            );
+                            </div>
+                          );
                         })}
                       </div>
                     )}
@@ -2163,7 +2855,7 @@ export default function PortalPage({
       {/* FLAG COMMENT MODAL (DISTRICT OFFICER) */}
       {flaggingSub && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', zIndex: 3000, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
-          <div className="rotaract-card" style={{ width: '100%', maxWidth: isMobile ? '100%' : '480px', padding: isMobile ? '20px 16px 28px 16px' : '28px', position: 'relative', borderRadius: isMobile ? '22px 22px 0 0' : '20px', backgroundColor: '#FFFFFF', border: '2px solid #E11D48' }}>
+          <div className="rotaract-card" style={{ width: '100%', maxWidth: isMobile ? '100%' : '520px', maxHeight: '90vh', overflowY: 'auto', padding: isMobile ? '20px 16px 28px 16px' : '28px', position: 'relative', borderRadius: isMobile ? '22px 22px 0 0' : '20px', backgroundColor: '#FFFFFF', border: '2px solid #E11D48' }}>
             <button onClick={() => setFlaggingSub(null)} style={{ position: 'absolute', top: isMobile ? '12px' : '16px', right: isMobile ? '12px' : '16px', background: '#FFF1F2', border: 'none', color: '#E11D48', width: isMobile ? '44px' : '30px', height: isMobile ? '44px' : '30px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <X size={16} />
             </button>
@@ -2171,30 +2863,79 @@ export default function PortalPage({
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
               <Flag size={22} color="#E11D48" />
               <h3 style={{ fontSize: isMobile ? '1.15rem' : '1.3rem', fontWeight: 900, color: 'var(--text-primary)' }}>
-                Flag Report with Feedback Note
+                Flag Report with Audit Feedback
               </h3>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '16px' }}>
-              Monthly Report: <strong>"{flaggingSub.month}"</strong> by {flaggingSub.clubName}
+              Monthly Report: <strong>"{flaggingSub.month}"</strong> by <strong>{flaggingSub.clubName}</strong>
             </p>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 800, marginBottom: '6px' }}>Flag Feedback Comment for Club Officer *</label>
-              <textarea
-                rows={4}
-                placeholder="e.g. Please provide Rotary Showcase links for Community Services entries and check beneficiary counts..."
-                value={flagComment}
-                onChange={(e) => setFlagComment(e.target.value)}
-                style={{ ...inputStyle, resize: 'none', border: '1px solid #FECDD3' }}
-              />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Officer Details */}
+              <div style={{ background: '#FFF1F2', padding: '10px 14px', borderRadius: '10px', fontSize: '0.80rem', color: '#9F1239' }}>
+                Flagging Officer: <strong>{userSession?.fullName || 'District Officer'}</strong> ({userSession?.post || 'District Secretariat'})
+              </div>
+
+              {/* Preset Flag Reason */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 800, marginBottom: '6px' }}>Reason for Flagging *</label>
+                <select
+                  value={flagReason}
+                  onChange={(e) => setFlagReason(e.target.value)}
+                  style={{ ...inputStyle, border: '1px solid #FECDD3', backgroundColor: '#FFFFFF', fontWeight: 700 }}
+                >
+                  <option value="Incomplete Information / Missing Proof Links">Incomplete Information / Missing Proof Links</option>
+                  <option value="Incorrect Rotary Area of Focus">Incorrect Rotary Area of Focus</option>
+                  <option value="Missing Rotary Service Project Center Links">Missing Rotary Service Project Center Links</option>
+                  <option value="Description / Beneficiary Count Discrepancy">Description / Beneficiary Count Discrepancy</option>
+                  <option value="Formatting / Project Duplicate">Formatting / Project Duplicate</option>
+                  <option value="Other Secretariat Feedback">Other Secretariat Feedback</option>
+                </select>
+              </div>
+
+              {/* Specific Avenues Flagged */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 800, marginBottom: '6px' }}>
+                  Avenues Requiring Revision (Optional):
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  {REPORT_SECTIONS.map(sec => (
+                    <label key={sec.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', cursor: 'pointer', background: '#F8FAFC', padding: '6px 10px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!flaggedSections[sec.id]}
+                        onChange={(e) => {
+                          setFlaggedSections(prev => ({
+                            ...prev,
+                            [sec.id]: e.target.checked
+                          }));
+                        }}
+                      />
+                      <span>{sec.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Flag Feedback Comment */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 800, marginBottom: '6px' }}>Detailed Feedback Note for Club President / Secretary *</label>
+                <textarea
+                  rows={4}
+                  placeholder="e.g. Please add the missing Service Project Center URL and verify the beneficiary count for Community Service project 1..."
+                  value={flagComment}
+                  onChange={(e) => setFlagComment(e.target.value)}
+                  style={{ ...inputStyle, resize: 'none', border: '1px solid #FECDD3' }}
+                />
+              </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: isMobile ? 'column-reverse' : 'row', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column-reverse' : 'row', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
               <button type="button" onClick={() => setFlaggingSub(null)} className="btn-rotaract-outline" style={{ padding: '10px 16px', width: isMobile ? '100%' : 'auto', justifyContent: 'center', minHeight: '44px' }}>
                 Cancel
               </button>
               <button onClick={handleConfirmFlag} style={{ background: '#E11D48', color: '#FFFFFF', border: 'none', padding: '10px 20px', borderRadius: '100px', fontWeight: 800, fontSize: '0.88rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: isMobile ? '100%' : 'auto', minHeight: '44px' }}>
-                <Flag size={14} /> Submit Flag Comment
+                <Flag size={14} /> Submit Audit Flag
               </button>
             </div>
           </div>

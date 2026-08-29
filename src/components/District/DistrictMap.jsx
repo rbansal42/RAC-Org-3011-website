@@ -817,7 +817,7 @@ export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }
 
             <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
               <a
-                href={`mailto:${currentSlideoutClub.email || currentSlideoutClub.presidentEmail || 'techrid3011@gmail.com'}?subject=${encodeURIComponent(`Connecting with ${currentSlideoutClub.name} (RY 2026-27)`)}`}
+                href={`mailto:${currentSlideoutClub.email || currentSlideoutClub.presidentEmail || ''}?subject=${encodeURIComponent(`Connecting with ${currentSlideoutClub.name} (RY 2026-27)`)}`}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

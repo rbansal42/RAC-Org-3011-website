@@ -25,46 +25,7 @@ function base32ToBuf(base32) {
 }
 
 /**
- * Master Security Salt for SHA-256 TOTP Generation
- */
-const MASTER_SALT = 'ROTARACT_DISTRICT_3011_HIGH_SECURITY_VAULT_SALT_984729183471092834';
-
-/**
- * Generate a cryptographically secure, randomized 16-character Base32 Secret Key.
- * Uses SHA-256 hashing of (Rotary ID + Master Salt) so keys look 100% random and are unguessable.
- */
-export async function getSecretForRotaryId(rotaryId) {
-  try {
-    const cleanId = (rotaryId || '3011').trim().toLowerCase();
-    const encoder = new TextEncoder();
-    const data = encoder.encode(`${cleanId}:${MASTER_SALT}`);
-    
-    const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
-    const hashArray = new Uint8Array(hashBuffer);
-    
-    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-    let base32 = '';
-    
-    let bits = 0;
-    let value = 0;
-    for (let i = 0; i < hashArray.length && base32.length < 16; i++) {
-      value = (value << 8) | hashArray[i];
-      bits += 8;
-      while (bits >= 5 && base32.length < 16) {
-        const index = (value >>> (bits - 5)) & 31;
-        base32 += alphabet[index];
-        bits -= 5;
-      }
-    }
-    return base32;
-  } catch (e) {
-    console.error('Cryptographic secret generation fallback:', e);
-    return 'JBSWY3DPEHPK3PXP';
-  }
-}
-
-/**
- * Generate pure 100% random 16-character Base32 secret for database storage
+ * Generate cryptographically random 16-character Base32 secret using window.crypto.getRandomValues
  */
 export function generateRandomBase32Secret() {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

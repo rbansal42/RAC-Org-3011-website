@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import { findUserCredential } from '../data/userRegistry';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -55,7 +54,7 @@ const parseSubFromDB = (item) => {
         eventName: item.title,
         date: item.submitted_at ? item.submitted_at.split('T')[0] : '2026-08-15',
         venue: 'Delhi NCR',
-        areaOfFocus: item.category || 'Disease Prevention & Treatment',
+        areaOfFocus: item.category || 'Disease prevention and treatment',
         clubStrength: '30 Members',
         initiatedBy: 'Rotaract',
         collaboratingOrgs: 'District 3011',
@@ -71,15 +70,32 @@ const parseSubFromDB = (item) => {
     console.warn('Parser warning:', err);
   }
 
+  let sectionFlags = {};
+  try {
+    if (item.section_flags) {
+      sectionFlags = typeof item.section_flags === 'string' ? JSON.parse(item.section_flags) : item.section_flags;
+    } else if (item.sectionFlags) {
+      sectionFlags = item.sectionFlags;
+    }
+  } catch (e) {}
+
+  const cleanClubName = (item.club_name || item.clubName || '').trim();
+  const cleanClubEmail = (item.club_email || item.clubEmail || '').trim();
+  const uniqueId = String(item.id || `mr-${cleanClubEmail || cleanClubName || 'club'}-${month}`).trim();
+
   return {
-    id: item.id,
+    id: uniqueId,
     month: month,
-    clubName: item.club_name || item.clubName || '',
-    clubEmail: item.club_email || item.clubEmail || '',
+    clubName: cleanClubName,
+    clubEmail: cleanClubEmail,
     submittedBy: item.submitted_by || item.submittedBy || 'Rotaract Officer',
     submittedAt: item.submitted_at ? item.submitted_at.split('T')[0] : item.submittedAt || new Date().toISOString().split('T')[0],
     status: item.status || 'reported',
     flagComment: item.flag_comment || item.flagComment || null,
+    flagReason: item.flag_reason || item.flagReason || null,
+    flaggedBy: item.flagged_by || item.flaggedBy || null,
+    flaggedAt: item.flagged_at || item.flaggedAt || null,
+    sectionFlags: sectionFlags || {},
     sections: item.sections || sections
   };
 };
@@ -116,7 +132,7 @@ export const dbService = {
             return { success: false, error: 'Access Denied: DAC Members do not have access to District or Club Portals.' };
           }
 
-          if (rawRole !== 'officer' && rawRole !== 'president') {
+          if (rawRole !== 'officer' && rawRole !== 'president' && rawRole !== 'secretary') {
             return { success: false, error: `Access Denied: Role '${row.role}' is not authorized for portal access.` };
           }
 
@@ -214,7 +230,7 @@ export const dbService = {
       try {
         const totalProjs = Object.values(newReport.sections || {}).reduce((sum, arr) => sum + (arr ? arr.length : 0), 0);
 
-        // 1. Insert/Upsert to dedicated monthly_reports table
+        // 1. Prepare clean payload for monthly_reports
         const reportPayload = {
           month: newReport.month,
           club_name: newReport.clubName,
@@ -222,37 +238,72 @@ export const dbService = {
           submitted_by: newReport.submittedBy,
           status: newReport.status || 'reported',
           flag_comment: newReport.flagComment || null,
+          flag_reason: newReport.flagReason || null,
+          flagged_by: newReport.flaggedBy || null,
+          flagged_at: newReport.flaggedAt || null,
+          section_flags: newReport.sectionFlags ? (typeof newReport.sectionFlags === 'string' ? newReport.sectionFlags : JSON.stringify(newReport.sectionFlags)) : null,
           sections_json: newReport.sections
         };
 
-        // Only include ID if it is a valid UUID
+        // Check if an entry already exists for this club & month in monthly_reports
+        let existingMrId = null;
         if (newReport.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(newReport.id)) {
-          reportPayload.id = newReport.id;
-        }
-
-        const { data: mrData, error: mrErr } = await supabase
-          .from('monthly_reports')
-          .upsert([reportPayload], { onConflict: 'club_email,month' })
-          .select();
-
-        if (!mrErr) {
-          console.log('Successfully saved monthly report to Supabase monthly_reports!', mrData);
-          return await dbService.fetchSubmissions();
+          existingMrId = newReport.id;
         } else {
-          console.warn('Supabase monthly_reports upsert notice:', mrErr.message || mrErr);
+          try {
+            const { data: found } = await supabase
+              .from('monthly_reports')
+              .select('id')
+              .eq('club_email', newReport.clubEmail)
+              .eq('month', newReport.month)
+              .limit(1);
+            if (found && found.length > 0) {
+              existingMrId = found[0].id;
+            }
+          } catch (e) {}
         }
 
-        // 2. Fallback insert to project_submissions table
+        if (existingMrId) {
+          const { error: updateErr } = await supabase
+            .from('monthly_reports')
+            .update(reportPayload)
+            .eq('id', existingMrId);
+
+          if (!updateErr) {
+            console.log('Updated existing monthly report in Supabase!');
+            return await dbService.fetchSubmissions();
+          }
+        } else {
+          const { error: insertErr } = await supabase
+            .from('monthly_reports')
+            .insert([reportPayload]);
+
+          if (!insertErr) {
+            console.log('Inserted new monthly report to Supabase monthly_reports!');
+            return await dbService.fetchSubmissions();
+          }
+        }
+
+        // 2. Fallback insert/update to project_submissions table
         const subPayload = {
           club_name: newReport.clubName,
           club_email: newReport.clubEmail,
           submitted_by: newReport.submittedBy,
           title: `${newReport.month} Monthly Report (${totalProjs} Projects)`,
           category: `Monthly Report (${newReport.month})`,
-          description: JSON.stringify({ month: newReport.month, sections: newReport.sections }),
-          budget: `₹${totalProjs * 25000}`,
-          beneficiaries: `${totalProjs * 150} People`,
-          proof_url: 'https://showcase.rotary.org',
+          description: JSON.stringify({ 
+            month: newReport.month, 
+            sections: newReport.sections,
+            status: newReport.status || 'reported',
+            flagComment: newReport.flagComment || null,
+            flagReason: newReport.flagReason || null,
+            flaggedBy: newReport.flaggedBy || null,
+            flaggedAt: newReport.flaggedAt || null,
+            sectionFlags: newReport.sectionFlags || null
+          }),
+          budget: `${totalProjs} Projects Logged`,
+          beneficiaries: `${totalProjs} Avenues Completed`,
+          proof_url: 'https://rotary.org/service-project-center',
           status: newReport.status || 'reported'
         };
 
@@ -261,10 +312,8 @@ export const dbService = {
           .insert([subPayload]);
 
         if (!subErr) {
-          console.log('Successfully saved report to Supabase project_submissions fallback table!');
+          console.log('Saved report to Supabase project_submissions fallback table!');
           return await dbService.fetchSubmissions();
-        } else {
-          console.warn('Supabase project_submissions insert notice:', subErr.message || subErr);
         }
       } catch (err) {
         console.error('Supabase insert submission error:', err);
@@ -273,15 +322,25 @@ export const dbService = {
     return mockStore.addSubmission(newReport);
   },
 
-  flagSubmission: async (id, comment) => {
+  flagSubmission: async (id, flagPayload) => {
+    const comment = typeof flagPayload === 'string' ? flagPayload : flagPayload?.comment || '';
+    const reason = typeof flagPayload === 'object' ? flagPayload?.reason || 'Audit Feedback' : 'Audit Feedback';
+    const flaggedBy = typeof flagPayload === 'object' ? flagPayload?.flaggedBy || 'District Secretariat' : 'District Secretariat';
+    const sectionFlags = typeof flagPayload === 'object' ? flagPayload?.sectionFlags || {} : {};
+    const flaggedAt = new Date().toISOString().split('T')[0];
+
     if (isSupabaseConfigured && supabase) {
       try {
-        let query = supabase.from('monthly_reports').update({ status: 'flagged', flag_comment: comment });
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-          query = query.eq('id', id);
-        } else {
-          query = query.eq('id', id);
-        }
+        const updatePayload = { 
+          status: 'flagged', 
+          flag_comment: comment,
+          flag_reason: reason,
+          flagged_by: flaggedBy,
+          flagged_at: flaggedAt,
+          section_flags: JSON.stringify(sectionFlags)
+        };
+
+        let query = supabase.from('monthly_reports').update(updatePayload).eq('id', id);
         const { error: mrErr } = await query;
 
         if (!mrErr) {
@@ -301,7 +360,7 @@ export const dbService = {
         console.warn('Supabase flag notice:', err);
       }
     }
-    return mockStore.flagSubmission(id, comment);
+    return mockStore.flagSubmission(id, { comment, reason, flaggedBy, sectionFlags, flaggedAt });
   },
 
   deleteSubmission: async (id) => {
@@ -317,7 +376,7 @@ export const dbService = {
           .delete()
           .eq('id', id);
 
-        if (!mrErr || !subErr) {
+        if (!mrErr && !subErr) {
           console.log(`Successfully deleted report ${id} from Supabase!`);
           return await dbService.fetchSubmissions();
         }
@@ -336,15 +395,16 @@ export const dbService = {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           return data.map(a => ({
             id: a.id,
             title: a.title,
-            category: a.category,
+            category: a.category || 'District Event',
+            targetAudience: a.target_audience || 'all',
             author: a.author_name || 'District Secretariat',
             date: a.created_at ? new Date(a.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'August 2026',
             content: a.content,
-            sentViaEmail: a.sent_via_email
+            sentViaEmail: Boolean(a.sent_via_email)
           }));
         }
       } catch (err) {
@@ -361,7 +421,8 @@ export const dbService = {
           .from('announcements')
           .insert([{
             title: announcement.title,
-            category: announcement.category,
+            category: announcement.category || 'District Event',
+            target_audience: announcement.targetAudience || 'all',
             content: announcement.content,
             author_name: announcement.author || 'District Secretariat',
             sent_via_email: Boolean(announcement.sentViaEmail)
@@ -369,12 +430,34 @@ export const dbService = {
 
         if (!error) {
           return await dbService.fetchAnnouncements();
+        } else {
+          console.warn('Supabase announcement insert error:', error);
         }
       } catch (err) {
         console.warn('Supabase announcement insert notice:', err);
       }
     }
     return mockStore.addAnnouncement(announcement);
+  },
+
+  deleteAnnouncement: async (id) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase
+          .from('announcements')
+          .delete()
+          .eq('id', id);
+
+        if (!error) {
+          return await dbService.fetchAnnouncements();
+        } else {
+          console.warn('Supabase delete announcement error:', error);
+        }
+      } catch (err) {
+        console.warn('Supabase delete announcement notice:', err);
+      }
+    }
+    return mockStore.deleteAnnouncement(id);
   },
 
   // Save TOTP secret securely to Supabase user_profiles via RPC
@@ -525,14 +608,34 @@ export const mockStore = {
 
   addSubmission: (newSub) => {
     const subs = mockStore.getSubmissions();
-    const updated = [newSub, ...subs.filter(s => s.id !== newSub.id)];
+    const cleanId = newSub.id || `sub-${Date.now()}`;
+    const cleanSub = { ...newSub, id: cleanId };
+    const updated = [
+      cleanSub,
+      ...subs.filter(s => s.id !== cleanId && !(s.clubEmail && cleanSub.clubEmail && s.clubEmail === cleanSub.clubEmail && s.month === cleanSub.month))
+    ];
     mockStore.saveSubmissions(updated);
     return updated;
   },
 
-  flagSubmission: (id, comment) => {
+  flagSubmission: (id, flagInfo) => {
     const subs = mockStore.getSubmissions();
-    const updated = subs.map(s => s.id === id ? { ...s, status: 'flagged', flagComment: comment } : s);
+    const isObj = typeof flagInfo === 'object';
+    const comment = isObj ? flagInfo.comment : flagInfo;
+    const reason = isObj ? flagInfo.reason : null;
+    const flaggedBy = isObj ? flagInfo.flaggedBy : null;
+    const sectionFlags = isObj ? flagInfo.sectionFlags : {};
+    const flaggedAt = isObj ? flagInfo.flaggedAt : new Date().toISOString().split('T')[0];
+
+    const updated = subs.map(s => s.id === id ? { 
+      ...s, 
+      status: 'flagged', 
+      flagComment: comment,
+      flagReason: reason,
+      flaggedBy: flaggedBy,
+      sectionFlags: sectionFlags,
+      flaggedAt: flaggedAt
+    } : s);
     mockStore.saveSubmissions(updated);
     return updated;
   },
@@ -556,6 +659,17 @@ export const mockStore = {
   addAnnouncement: (newAnno) => {
     const annos = mockStore.getAnnouncements();
     const updated = [newAnno, ...annos];
+    try {
+      localStorage.setItem(MOCK_ANNOUNCEMENTS_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Local storage save error', e);
+    }
+    return updated;
+  },
+
+  deleteAnnouncement: (id) => {
+    const annos = mockStore.getAnnouncements();
+    const updated = annos.filter(a => a.id !== id);
     try {
       localStorage.setItem(MOCK_ANNOUNCEMENTS_KEY, JSON.stringify(updated));
     } catch (e) {
