@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0;background:#EFE9EC}
+a{color:#D81B60;text-decoration:none}
+a:hover{color:#C21350}
+</style>
+</helmet>
+
+<x-import component-from-global-scope="doc-page" from="./doc-page.js" size="a4" hint-size="100%,100%">
+
+<div slot="header" style="display:flex; align-items:baseline; justify-content:space-between; font-family:'Montserrat',sans-serif; font-size:8pt; color:#71717A; padding-bottom:6pt; border-bottom:0.5pt solid #E4D5DC">
+  <span style="font-weight:700; letter-spacing:0.6pt; color:#D81B60">RAC DISTRICT 3011 · DESIGN RECONCILIATION</span>
+  <span>4 September 2026</span>
+</div>
+
+<div style="font-family:'Montserrat',sans-serif; color:#1E1E24">
+
+<p style="font-size:8pt; font-weight:700; letter-spacing:1pt; color:#D81B60; margin:0 0 8pt">WHAT IS DESIGNED, WHAT IS NOT, WHAT NEEDS A DECISION</p>
+<h1 style="font-size:23pt; font-weight:800; letter-spacing:-0.6pt; line-height:1.15; margin:0 0 12pt">The design against the 4 September spec</h1>
+
+<p style="font-size:10.5pt; line-height:1.6; color:#4A4A5A; margin:0 0 8pt">Two canvases exist. <strong style="color:#1E1E24">Public Pages</strong> holds 21 public screens, <strong style="color:#1E1E24">Portal</strong> holds 15, each drawn at 1440, 768 and 390. Both were designed against <code style="font-size:9.5pt; color:#880E4F">features.md</code> and the planning call, and against that brief they are close to complete.</p>
+<p style="font-size:10.5pt; line-height:1.6; color:#4A4A5A; margin:0 0 8pt">The admin-portal spec approved on 4 September is a much larger brief. It opens the portal to every member across 75 clubs, replaces four fixed roles with configurable scoped ones, makes both the report form and the point rules editable without a deploy, adds event attendance capture, and adds a fifth subdomain. Roughly two thirds of it has no design yet.</p>
+<p style="font-size:10.5pt; line-height:1.6; color:#4A4A5A; margin:0 0 20pt">This document maps every part of both specs to a screen, states plainly what is missing, and separates decisions I can make from decisions the district has to make.</p>
+
+<h2 style="font-size:13pt; font-weight:800; letter-spacing:-0.3pt; margin:0 0 9pt; padding-bottom:5pt; border-bottom:1.5pt solid #D81B60">1 · features.md — the original brief</h2>
+<p style="font-size:10pt; line-height:1.55; color:#4A4A5A; margin:0 0 11pt">Fourteen of sixteen feature areas are drawn at all three breakpoints. The two exceptions are called out in bold.</p>
+
+<table style="width:100%; border-collapse:collapse; font-size:9pt; margin:0 0 16pt">
+  <tbody>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700; width:31%">Home, hero, carousel</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Scroll-jacking removed, plain snap strip that bleeds off the right edge. "70+ clubs" replaced with four unarguable figures. The live site's expanding flagship carousel carried over unchanged in behaviour.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Interactive map</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Zone filter, WhatsApp and email deep links, club KPIs on the selected club, one tidy attribution chip. Loading, tiles-failed and empty-zone states drawn.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Showcase, detail, approval</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Uniform-height CSS grid, no masonry. Queue designed as edit-then-publish with submitted text shown verbatim, because club-written copy was flagged error-prone.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Heritage, DRR profile</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Grouped by district numbering. Both edge cases handled: two non-contiguous terms, and a low-resolution Instagram-sourced portrait.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Leadership, DSC, club teams</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Core trio, DSC roster, per-club board with blood group and contacts.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Initiatives dashboards</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Radial gauges as conic gradients. Unreachable-subdomain state shows the last known figure with its timestamp rather than a dash.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Resources, publications</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Six categories, guest kit generated from leadership data, locked rows listed not hidden. Coming-soon state names a month.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">New club, sponsor, contact</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Each routes to a named person. Sponsorship widget is a range input and three numbers, no animation.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">DRR calendar, booking, admin</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Nine months of bookable dates for installations and club events. Checking, unreachable and provisionally-held states drawn.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Achievements, partners</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Certificates stay portrait at every width. Permission-pending partner cells hold space unbranded.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Portal — auth, reporting, points</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Drawn. Email OTP replaces the authenticator app; five-hour device memory kept. Own-points-only enforced, with the anonymised top three drawn as an option to accept or reject.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700; color:#880E4F">Job portal</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#880E4F; line-height:1.45; font-weight:700">Not designed — Career Bridge subdomain, including posted-versus-filled.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700; color:#880E4F">AI / tech-integration item</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#880E4F; line-height:1.45; font-weight:700">Decided, not drawn — officer-side report assist. Section 4.</td></tr>
+  </tbody>
+</table>
+
+<h2 style="font-size:13pt; font-weight:800; letter-spacing:-0.3pt; margin:0 0 9pt; padding-bottom:5pt; border-bottom:1.5pt solid #D81B60">2 · The 4 September spec, section by section</h2>
+<div style="padding:11pt 14pt; background:#FDF0F5; border:0.5pt solid rgba(216,27,96,0.25); border-radius:4pt; margin:0 0 12pt">
+  <p style="font-size:9.5pt; line-height:1.55; color:#4A4A5A; margin:0"><strong style="color:#1E1E24">Updated 4 September, after the build.</strong> The gaps this table opened have since been designed: <strong style="color:#1E1E24">Portal Admin</strong> carries twelve screens covering scoped roles, the content CMS, the report-form builder, ad-hoc requests, point rules, club facts, scoring with a computed-versus-judged split, the officer-side assist, member approvals, the directory, event check-in and the effort log; <strong style="color:#1E1E24">Subdomains</strong> carries seventeen across Mission 3011, Drishti, RCL, Career Bridge and RIDE; <strong style="color:#1E1E24">Design System</strong> carries thirty-six components in light and dark. A second pass the same day closed the last five: district settings including the unassigned-subdomain state, the announcement audience builder, the feedback channel, the member card with milestones and certificates, and the privacy policy that gates the directory. Every lettered section now has a screen at 1440, 768 and 390.</p>
+</div>
+
+<table style="width:100%; border-collapse:collapse; font-size:9pt; margin:0 0 8pt">
+  <thead><tr>
+    <th style="text-align:left; padding:4pt 8pt 4pt 0; border-bottom:1pt solid #D81B60; font-size:7.5pt; letter-spacing:0.6pt; color:#D81B60; text-transform:uppercase; width:27%">Section</th>
+    <th style="text-align:left; padding:4pt 8pt; border-bottom:1pt solid #D81B60; font-size:7.5pt; letter-spacing:0.6pt; color:#D81B60; text-transform:uppercase; width:13%">Status</th>
+    <th style="text-align:left; padding:4pt 0; border-bottom:1pt solid #D81B60; font-size:7.5pt; letter-spacing:0.6pt; color:#D81B60; text-transform:uppercase">What design still owes it</th>
+  </tr></thead>
+  <tbody>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">A · Scoped RBAC</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">A role editor, and a zone-scoped ZRR dashboard. My accounts screen argues the org tree is deferred — that argument is now void and the screen needs rewriting.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">B · Content-block CMS</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">An editor tab covering the seven areas you selected. Every asset field is a pasted link, never a file picker — a real UI consequence of the no-bucket decision that needs designing honestly.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">C · Dynamic report schema</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">A form builder, and a report form that renders from a schema instead of fixed markup. This is also what makes "other report types" possible.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">D · Point rules, club facts, audit</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">The largest gap. Rule configuration across 13 categories with four rule types and three periods, a club-facts screen, an audit trail, and a scoring view that separates computed points from judged ones. Section 3.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">E · Settings</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">DRR availability rules drawn. Subdomain activation and lead-club assignment are not — and /initiatives needs an unassigned state for before CLS bidding closes.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">F · Effort log</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">One internal admin table, no public route by decision. Points discretionary.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">G · RIDE subdomain</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">A fifth subdomain, not previously in my brief: support-club registration with real capacity, incoming delegations, gallery, and admin host assignment that can split one delegation across clubs.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">H · Member accounts</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">A member dashboard exists. Self-registration, the club-officer approval queue, roster import with email dedup, skills and interests capture, and the QR member ID do not.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">I · Personal dashboard</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">My-club view drawn. Contribution log, certificates, and member-submitted showcase entries are not — and member submission changes who the showcase queue receives work from.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">J · Member directory</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Search by skill, interest, club or zone, with the opt-in visibility model visible on the screen rather than buried in a policy.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">K · Individual badges</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Most deferrable item in the spec, by its own build order.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">L · Visitor counter</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Done</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Footer, phrased per year.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">M, N · Email pooling, web push</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Partial</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Mostly backend, but two screens change: the composer needs a channel choice, and push needs a permission prompt asked at a sensible moment rather than on first load.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">S · Event RSVP and check-in</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">The public calendar is read-only today. RSVP, QR check-in, and a per-event attendance view are all new, and they feed the heaviest point category.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">T · Multi-club projects</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Collaborators already a report field and a scoring column. Missing: lead versus collaborator on a project, and co-club attribution on the showcase card.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">U · Feedback channel</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">One form, two entry points: general, and attached to a specific event.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">V · Privacy and terms</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Two static pages, plus footer links. Must exist before the member directory goes live, not after.</td></tr>
+    <tr><td style="padding:5pt 8pt 5pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">W · Segmented announcements</td><td style="padding:5pt 8pt; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A">Designed</td><td style="padding:5pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">My composer offers four fixed audiences. It needs role plus zone plus club combinations, which is an audience builder rather than a row of chips.</td></tr>
+  </tbody>
+</table>
+
+<p style="font-size:9.5pt; line-height:1.55; color:#4A4A5A; margin:0 0 20pt"><strong style="color:#1E1E24">Not design work:</strong> O and P (one deployment, cookie scoped to the parent domain), Q (backups), and the Postgres migration. R — accessibility, SEO, mobile-first — is a standard applied to every screen rather than a screen of its own; the three-breakpoint drawings already carry the mobile-first half of it.</p>
+
+<h2 style="font-size:13pt; font-weight:800; letter-spacing:-0.3pt; margin:0 0 9pt; padding-bottom:5pt; border-bottom:1.5pt solid #D81B60">3 · What the point matrix does to reporting</h2>
+
+<p style="font-size:10.5pt; line-height:1.6; color:#4A4A5A; margin:0 0 9pt">You asked for reporting to be designed so the district team can award points easily. Reading the spec, the honest answer is that most points should never be awarded by a person at all — the official document's 13 categories are mostly arithmetic, and the spec already says rules compute the moment a report is submitted. Design's job is therefore not a better scoring form. It is to make the two kinds of points visibly different.</p>
+
+<table style="width:100%; border-collapse:collapse; font-size:9.5pt; margin:0 0 12pt">
+  <tbody>
+    <tr>
+      <td style="width:50%; vertical-align:top; padding:12pt 14pt; background:#FDF8FA; border:0.5pt solid #F0E4E9; border-radius:4pt">
+        <p style="font-size:8pt; font-weight:700; letter-spacing:0.7pt; color:#D81B60; margin:0 0 6pt">COMPUTED — SHOWN, NOT EDITED</p>
+        <p style="font-size:9.5pt; line-height:1.5; color:#4A4A5A; margin:0">Workshop counts, attendance brackets, retention percentages, collaboration tiers, dues timing, RIDE hosting days. These arrive already totalled. An officer's screen should display them with the rule that produced each one, and offer no input box — an editable field next to a computed number invites an officer to "correct" arithmetic, and the audit log then records a human overriding a rule for no stated reason.</p>
+      </td>
+      <td style="width:4%"></td>
+      <td style="width:46%; vertical-align:top; padding:12pt 14pt; background:#FDF0F5; border:0.5pt solid rgba(216,27,96,0.25); border-radius:4pt">
+        <p style="font-size:8pt; font-weight:700; letter-spacing:0.7pt; color:#880E4F; margin:0 0 6pt">JUDGED — THE ONLY PLACE A PERSON TYPES</p>
+        <p style="font-size:9.5pt; line-height:1.5; color:#4A4A5A; margin:0">Quality of a collaboration, the effort log, anything the document has no category for. One input, one note field, one name attached. Small by design: the call was explicit that automated quality scoring is not wanted, and equally explicit that scoring must not become a full-time job.</p>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<p style="font-size:10.5pt; line-height:1.6; color:#4A4A5A; margin:0 0 8pt">Three consequences for screens already drawn:</p>
+<ul style="font-size:10pt; line-height:1.6; color:#4A4A5A; margin:0 0 10pt; padding-left:16pt">
+  <li style="margin-bottom:5pt"><strong style="color:#1E1E24">The scoring table changes shape.</strong> Today it has one input per club-month. It needs a computed subtotal per category, a single judged input, and a rule trace an officer can open when a club queries a number.</li>
+  <li style="margin-bottom:5pt"><strong style="color:#1E1E24">Club facts get their own screen.</strong> Dues date, RI Citation, Paul Harris Fellows, dual membership, MDIO committee, sister-club signing — about a dozen slow-changing values that silently drive points. They are not in the monthly report and have nowhere to live in the current design.</li>
+  <li><strong style="color:#1E1E24">The club's own view gains a breakdown.</strong> A club that can see 42 points but not which category produced them will ask an officer, every month. The trend graph needs a per-category split beneath it.</li>
+</ul>
+<p style="font-size:10pt; line-height:1.6; color:#4A4A5A; margin:0 0 20pt">The report form itself stays as drawn, with one addition you asked for: a plain notes box beside the structured fields, for the presidents who will not fill a form. The officer receives structure either way, because the assist runs on their side.</p>
+
+<h2 style="font-size:13pt; font-weight:800; letter-spacing:-0.3pt; margin:0 0 9pt; padding-bottom:5pt; border-bottom:1.5pt solid #D81B60">4 · Decisions taken, and their consequences</h2>
+
+<table style="width:100%; border-collapse:collapse; font-size:9pt; margin:0 0 18pt">
+  <tbody>
+    <tr><td style="padding:6pt 8pt 6pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700; width:29%">Second factor is email OTP</td><td style="padding:6pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Removes enrolment entirely, which is what made the authenticator route awkward for 146 accounts turning over each July. Costs a generous ten-minute expiry and a visibly rate-limited resend. Leaves <code style="color:#880E4F">src/lib/totp.js</code> as dead code — delete it or keep TOTP as an officer-only option, but do not leave both half-wired.</td></tr>
+    <tr><td style="padding:6pt 8pt 6pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Assist runs officer-side only</td><td style="padding:6pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">A club never meets a model, so no suggested number can enter district records unreviewed. It runs where the workload actually is: one officer reading 48 months. Satisfies the presentation's tech-integration theme without an open-ended chatbot.</td></tr>
+    <tr><td style="padding:6pt 8pt 6pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Editing team is a fourth role</td><td style="padding:6pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Publish rights only: they change what the public sees and touch no club data, no reports, no accounts. Fits the spec's scoped-role model as an unscoped role with a narrow permission set.</td></tr>
+    <tr><td style="padding:6pt 8pt 6pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Members submit showcase entries</td><td style="padding:6pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Per the spec revision. Publishing still needs an officer, so the approval queue design holds — but its inbox now receives work from roughly three hundred people rather than 146, which raises the volume the edit-then-publish screen must absorb.</td></tr>
+    <tr><td style="padding:6pt 8pt 6pt 0; border-bottom:0.5pt solid #F0E4E9; font-weight:700">Anonymised top three</td><td style="padding:6pt 0; border-bottom:0.5pt solid #F0E4E9; color:#4A4A5A; line-height:1.45">Drawn, not committed. Bars with no club names, own position shown only if in it. This is a district decision and the drawing exists so it can be made against something real.</td></tr>
+  </tbody>
+</table>
+
+<h2 style="font-size:13pt; font-weight:800; letter-spacing:-0.3pt; margin:0 0 9pt; padding-bottom:5pt; border-bottom:1.5pt solid #D81B60">5 · Open questions the design cannot settle</h2>
+
+<ol style="font-size:10pt; line-height:1.6; color:#4A4A5A; margin:0 0 12pt; padding-left:16pt">
+  <li style="margin-bottom:6pt"><strong style="color:#1E1E24">Does the 6 September demo need any of this?</strong> The spec is a build plan for the year. The demo needs the public pages and a working login. Deciding what is demo scope versus year scope changes what I draw next.</li>
+  <li style="margin-bottom:6pt"><strong style="color:#1E1E24">Who owns the point rules on day one?</strong> A configurable rule editor is a serious surface. If only the DRR ever touches it, it can be a plain table; if DSC officers will, it needs guardrails and the audit trail becomes visible in the UI, not just the database.</li>
+  <li style="margin-bottom:6pt"><strong style="color:#1E1E24">Pasted links as the only asset path.</strong> With no bucket, a broken Drive link silently empties a showcase card or a charter certificate. Every image slot needs a designed fallback, and someone has to own re-linking. Worth confirming before it becomes forty broken images.</li>
+  <li style="margin-bottom:6pt"><strong style="color:#1E1E24">Role transitions mid-year.</strong> The spec defers effective-dated roles, but a president changed mid-tenure this year. Until that exists, points and reports attribute to whoever holds the role now, not who held it then — an award dispute waiting to happen.</li>
+  <li><strong style="color:#1E1E24">Two lorem-ipsum constants are live.</strong> <code style="color:#880E4F">ExpandingCarousel</code> renders <code style="color:#880E4F">BASE_PROJECTS</code> — "Project Alpha", lorem body text — while the real five projects sit unused in <code style="color:#880E4F">FLAGSHIP_SLICES</code>. One line to fix, and the highest-value change on the current homepage.</li>
+</ol>
+
+<p style="font-size:10pt; line-height:1.6; color:#4A4A5A; margin:0 0 6pt"><strong style="color:#1E1E24">Next in build order:</strong> the design system and its dark mode, then the five subdomains, then the spec's portal surfaces in dependency order — roles, then report schema, then point rules, then member accounts and event attendance.</p>
+
+</div>
+</x-import>
+</x-dc>
+</body>
+</html>
