@@ -103,8 +103,17 @@ flexibility, only "edit existing content without a deploy."
   dedicated admin CRUD screens, **not** `content_blocks` rows: Achievements,
   Partners, Calendar events, Resource documents, Heritage/DRR profiles (per
   the sitemap and `docs/data-requirements.md`).
-- Image uploads go through object storage (R2/S3-style, matching the pattern
-  used elsewhere in other projects), never base64-in-Postgres.
+- **Asset storage decision (revised 2026-09-04): no server-owned object
+  storage.** Public assets (member photos, showcase images, RIDE gallery,
+  guest-kit bios, charter certificates) are **not uploaded to a bucket we
+  manage** — every asset field stores an external URL (Google Drive/Photos
+  link, or wherever the source already lives) and our infrastructure only
+  **caches** it (CDN/edge cache in front of the external URL, e.g. via
+  Cloudflare), never owns the persistent copy. This removes the need for
+  bucket provisioning, access-key management, and storage-cost planning
+  entirely — but means upload UX is "paste a link," not a file picker, and
+  the site's uptime for images depends on the external host staying up.
+  Never base64-in-Postgres regardless.
 
 ---
 
@@ -140,6 +149,20 @@ Retention, Rotary International, Public Image, District Dues, MDIOs Presence).
 `point_rules` — one row per scoring rule from the official document:
 - `id`, `category` (one of the 13 above), `label`, `rule_type`
   (`flat | per_unit | tiered | penalty`)
+- **`period`** (added 2026-09-04 — was a missing dimension): `monthly |
+  yearly | once`. This is required, not optional — the official document
+  mixes all three without saying so explicitly:
+  - `monthly` — resets each reporting month (e.g. "at most/more than 4
+    workshops in a month," attendance % brackets computed per month)
+  - `yearly` — cumulative across the Rotary Year, never resets mid-year
+    (e.g. membership retention %, net membership growth)
+  - `once` — fires at most once per club for the whole year, idempotent
+    (e.g. "establishment of a vocational centre" = 100 pts, one-time flags)
+  - Computation must respect this: a `monthly` rule sums per report period
+    and a club's total is the sum across all months; a `once` rule checks
+    "has this already been awarded to this club this year" before applying
+    again, regardless of how many times the triggering fact/field is
+    updated.
 - `source` — either `report_field:<key>` (references section C's schema) or
   `club_fact:<key>` (a district/club-level fact tracked outside the monthly
   report — see below)
@@ -174,6 +197,24 @@ collaboration, judgment calls). A report's/project's total score is
 **Visibility, confirmed earlier in planning:** a club sees only its own
 cumulative point trend, never other clubs' — avoids inter-club dispute over
 awards.
+
+### Audits (added 2026-09-04)
+
+Points decide district awards, so every change that affects a score must be
+attributable. A general-purpose `audit_log` (`actor_id`, `action`,
+`resource_type`, `resource_id`, `before`, `after` (jsonb diffs), `at`) is
+required from day one, not added later. Minimum coverage:
+- Any `point_rules` / `point_rule_tiers` change (who changed a rule's
+  points/tiers, when)
+- Any `club_facts` edit (dues-paid date, RI Citation, etc. — these directly
+  drive auto-computed points)
+- Any subjective points assignment/change (project, report, effort-log)
+- Any role/permission change (Section A)
+
+This is an audit trail, not yet a full appeal/dispute workflow UI — a club
+disputing their score can be resolved by an admin reading the log manually
+for now. A structured appeal flow (club raises a dispute, admin responds
+in-system) is a reasonable future addition but not required for this build.
 
 ---
 
@@ -267,6 +308,19 @@ hold `President, scope: same club` etc.
     (`users:approve` permission, club-scoped)
   - Bulk import: officers upload a roster (CSV or a form), accounts/invites
     created in bulk
+  - **Duplicate handling (added 2026-09-04 — both paths target the same 75
+    clubs, collision is inevitable):** email is the hard dedup key —
+    `user_profiles.email` gets a real unique constraint (case-insensitive;
+    an index on `lower(email)` already exists from the Supabase migration,
+    this upgrades it to enforced-unique). Bulk import checks each roster row
+    against existing accounts by email before creating a new one — a match
+    updates/links the existing account (and its roles) rather than creating
+    a duplicate; only genuinely new emails create new pending accounts.
+- **Role transitions are a known gap, deferred.** When a President changes
+  mid-tenure (this happened this year per the planning call), scoped role
+  assignments need an effective-date so historical reports/points stay
+  attributed to whoever actually held the role at the time. Not solved in
+  this spec — tracked as follow-up work, not blocking the initial build.
 - `members` extends `user_profiles` — adds `photo_url`, `bio`, `skills`
   (array/jsonb), `interests` (array/jsonb), `membership_anniversary`. The
   skills/interests fields exist specifically because they're a scored
@@ -332,6 +386,105 @@ scale (thousands of members compared publicly). Instead:
   simple threshold checks against existing tables, evaluated on write (e.g.
   after an attendance check-in or contribution approval), not a scheduled job.
 
+## L. Site analytics / live visitor counter
+
+Explicit in the original planning call and `features.md`, dropped during
+compilation, restored 2026-09-04. Kept deliberately simple — no third-party
+analytics mandate: a `page_views` (or similar) counter incremented
+server-side on page load, surfaced as a live-updating number on the home
+page. If real analytics (traffic sources, funnels) become useful later,
+that's a separate, later decision — this is just the visible counter that
+was asked for.
+
+## M. Email delivery — multi-provider, free-tier pooling
+
+Confirmed 2026-09-04: email goes through a provider-agnostic sending layer
+that rotates across three free-tier providers to stay entirely free while
+pooling their combined daily caps:
+
+| Provider | Free daily cap |
+|---|---|
+| Resend | 100/day |
+| Mailgun | 100/day |
+| Gmail SMTP | 500/day |
+
+~700 emails/day combined. The sending layer tries providers in order (or
+round-robins) and fails over to the next when one is exhausted or errors —
+this needs to be an actual abstraction (a `sendEmail()` service in the
+`services` layer, not calls to a specific provider's SDK scattered through
+the codebase), since which provider handles a given email shouldn't matter
+to any caller. Triggers that need this: report-flagged notifications, DRR
+booking confirmations, approval/rejection notices, password reset — all
+previously implied by earlier planning but never given an actual delivery
+mechanism until now.
+
+## N. Push notifications — web/mobile browser
+
+New requirement, confirmed 2026-09-04: browser-based push (Web Push API +
+service worker + VAPID keys), working on both desktop and mobile browsers.
+This is **not** native app push (no FCM/APNs) — that's out of scope until an
+actual native mobile app exists, which is still a future item per §3's
+two-repo architecture reasoning. Natural trigger points reuse the same
+events as Section M's email triggers (announcements, booking confirmations,
+approval notices) — the two channels should share one notification-dispatch
+service internally rather than being built as separate systems that happen
+to fire on the same events.
+
+## O. Deployment topology — one codebase, one deployment
+
+Confirmed 2026-09-04: the frontend is **one codebase, one deployment** —
+not five separate apps for the five project subdomains. A single deployed
+instance serves `rotaract3011.org` and all five subdomains
+(`mission3011.*`, `drishti.*`, `rcl.*`, `careerbridge.*`, `ride.*`),
+detecting which experience to render from the request hostname. This
+matches the nginx/Traefik pattern already in use for other multi-domain
+apps in this workspace (one app, multiple domains routed to the same
+origin) — it means one Dokploy app + one build pipeline, with 5 additional
+domains/DNS records/certs pointed at it, not 5 additional apps to
+build/deploy/monitor separately.
+
+This also resolves the cross-subdomain auth question in Section P below —
+since it's genuinely one running application, session handling is simpler
+than if these were independently deployed apps, though cookies still need
+explicit `Domain=.rotaract3011.org` scoping since each subdomain remains a
+distinct browser origin regardless of shared backend deployment.
+
+## P. Cross-subdomain authentication
+
+Confirmed approach, 2026-09-04: session cookie scoped to
+`Domain=.rotaract3011.org` (not per-subdomain), issued by the API on login,
+readable by the single frontend deployment (Section O) regardless of which
+subdomain the request came in on. The API itself lives at its own host
+(e.g. `api.rotaract3011.org`) and is the only thing that sets/validates the
+cookie — every subdomain's frontend calls the same API origin. This needs
+`SameSite=Lax` (not `Strict`, since navigation across subdomains should
+carry the session) and HTTPS-only (`Secure`) given it's a real session
+credential, not a preference cookie.
+
+## Q. Backup for the new Postgres — acknowledged, deferred
+
+`rac3011-postgres` (Oracle) currently has no backup — flagged as a real gap,
+but confirmed 2026-09-04 as **fine to defer**, not blocking. Every other
+Postgres instance in this workspace has a real backup story (VPS shared
+postgres → OneDrive every 15 min); this one should eventually match that
+pattern, but it's not required before starting the API/schema build.
+
+## R. Non-functional requirements — accessibility, SEO, mobile-first
+
+Confirmed 2026-09-04 as explicit requirements, not implied nice-to-haves:
+- **Accessibility** — baseline WCAG practices (semantic HTML, keyboard
+  navigation, alt text, sufficient contrast) across all public pages, not
+  just the portal
+- **SEO** — proper metadata/OG tags on public pages (Showcase, Achievements,
+  Leadership, Heritage especially — these are the shareable/discoverable
+  content), a generated sitemap.xml
+- **Mobile-first** — given the realistic usage pattern (club members on
+  phones, not desktops), layouts should be designed mobile-first and
+  verified on mobile viewports, not just responsive-as-an-afterthought
+
+These fold into the design-refinement work already scoped in
+`docs/claude-design-prompt.md` rather than requiring a separate build phase.
+
 ---
 
 ## Dependencies / build order
@@ -352,6 +505,16 @@ scale (thousands of members compared publicly). Instead:
 9. **K (gamification)** — depends on H, I (attendance/contribution data must
    exist before badges can trigger); build last, it's the most deferrable
    piece if timeline pressure hits
+10. **O (deployment topology) and P (auth)** — must be decided before *any*
+    subdomain work starts (F, G, and the four bid-out project subdomains),
+    since they determine how login and routing work across all of them
+11. **M (email) and N (push)** — should share one notification-dispatch
+    service; build together, needed wherever Sections C/F/G/H trigger a
+    notification
+12. **L (visitor counter)** and **Q (backup)** — no dependencies, can slot in
+    whenever; Q is explicitly non-blocking
+13. **R (accessibility/SEO/mobile-first)** — not a phase, a standard applied
+    throughout every other phase's frontend work
 
 ## Out of scope for this spec
 
@@ -361,3 +524,7 @@ scale (thousands of members compared publicly). Instead:
   surgeries, RCL fixtures, Career Bridge postings) — separate spec, tracked
   in `docs/data-requirements.md`
 - Whether report form changes need a scheduled cutover (open question in C)
+- Native mobile app push (FCM/APNs) — browser push only for now (Section N)
+- A structured appeal/dispute UI for point scores — audit log only for now
+  (Section D's Audits subsection)
+- Effective-dated role transitions — acknowledged gap, deferred (Section H)
