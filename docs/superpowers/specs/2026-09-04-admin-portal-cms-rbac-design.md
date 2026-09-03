@@ -39,11 +39,21 @@ system:
   `showcase:publish`, `content:edit`, `announcements:send`,
   `users:manage`, `roles:manage`)
 - `role_permissions` — join table
-- `user_profiles.role_id` replaces `user_profiles.role`
+- **`user_roles`** — `user_id`, `role_id`, `scope_type` (`null | club | project`),
+  `scope_id` (nullable — a `club_id` or a project subdomain key). **Revised
+  2026-09-04: a user can hold multiple roles simultaneously** (e.g. Member of
+  their own club + President of that same club + DSC/Admin), so this replaces
+  the originally-planned single `user_profiles.role_id` column entirely. A
+  user's effective permission set is the **union** across every role they
+  hold. Scoped roles (President scoped to one club, or a project subdomain's
+  Admin scoped to that project) only grant their permissions within that
+  scope — global roles (Super Admin, Member) have `scope_type: null`.
+  Project-subdomain admin (Section G and the other four subdomains) is just
+  another scoped role under this same model, not a separate auth system.
 
-Seed system roles: President, Secretary, DSC/Admin, Super Admin — but Super
-Admin can create new roles and edit permission grants through the UI. This is
-what makes it configurable rather than another hardcoded set.
+Seed system roles: Member, President, Secretary, DSC/Admin, Super Admin — but
+Super Admin can create new roles and edit permission grants through the UI.
+This is what makes it configurable rather than another hardcoded set.
 
 **Enforcement:**
 - Every API mutation endpoint has a guard/decorator checking the caller's
@@ -204,6 +214,75 @@ both fall under International Services) — it lives on the main site at
 
 ---
 
+## H. Member accounts (portal opened to all club members, not just officers)
+
+Extends the portal beyond Presidents/Secretaries/DSC to every member across
+all 75 clubs. This is what makes `user_roles` multi-role (Section A) actually
+necessary — a member is `role: Member, scope: their club` and may separately
+hold `President, scope: same club` etc.
+
+- **Onboarding — both paths supported, club's choice:**
+  - Self-registration: member signs up with email + selects their club, lands
+    in a pending queue; that club's President/Secretary approves
+    (`users:approve` permission, club-scoped)
+  - Bulk import: officers upload a roster (CSV or a form), accounts/invites
+    created in bulk
+- `members` extends `user_profiles` — adds `photo_url`, `bio`, `skills`
+  (array/jsonb), `interests` (array/jsonb), `membership_anniversary`. The
+  skills/interests fields exist specifically because they're a scored
+  category in the points document ("50%+ of members added skills &
+  interest" = 60 pts) — populating this table is itself measurable, not just
+  a nice-to-have profile field.
+- **Digital member ID (QR)** — generated per member, used for event check-in
+  (feeds Section I's attendance tracking).
+
+## I. Personal member dashboard
+
+- **My contribution log** — member-initiated version of Section F's effort
+  tracker: a member submits their own hours/task, an officer (President/
+  Secretary/DSC, club-scoped `effort:approve` permission) approves before it
+  counts. Approved entries still route through the same discretionary-points
+  mechanism as Section F.
+- **My certificates** — auto-generated PDF/badge for milestones: membership
+  anniversary, hours thresholds, Paul Harris Fellow status (already a scored
+  `club_fact` in Section D — 250 pts/member — so the certificate trigger and
+  the point rule share the same underlying fact).
+- **My club** — read-only view of own club's roster, projects, reports,
+  announcements (member-level `scope: own club` permissions — no edit
+  rights, that stays with President/Secretary/DSC roles).
+- **Personalized announcement feed** — extends the existing
+  `announcements.target_audience` targeting down to individual members, not
+  just officer-level roles.
+
+## J. District member directory
+
+Searchable across all 75 clubs by skill, interest, club, or zone. Doubles as
+a real utility (finding a specific skill set district-wide) and as the
+natural front-end consumer of the skills/interests data from Section H.
+Visibility: members see other members' public profile fields only (name,
+club, skills/interests, photo) — never contact info beyond what a member
+opts to share, and never point/scoring data (that stays club-internal per
+the existing visibility rule in Section D).
+
+## K. Individual gamification
+
+Deliberately **not** a cross-club leaderboard — that was already rejected for
+club-level points (Section D) for the same reason it'd be worse at individual
+scale (thousands of members compared publicly). Instead:
+- **Personal badges/milestones** — e.g. "10 events attended," "3 years of
+  service," "first project submitted" — visible only to the member
+  themselves and their own club's officers, not district-wide.
+- Sourced from data already being collected elsewhere in this spec:
+  attendance check-ins (Section I), contribution log entries (Section I),
+  membership anniversary (Section H) — no new data collection needed, this
+  is a presentation layer over existing facts.
+- `badges` (definition: key, label, icon, trigger rule) and
+  `member_badges` (member_id, badge_id, earned_at) — trigger rules are
+  simple threshold checks against existing tables, evaluated on write (e.g.
+  after an attendance check-in or contribution approval), not a scheduled job.
+
+---
+
 ## Dependencies / build order
 
 1. **A (RBAC)** — foundational, needed before any admin screen can be gated
@@ -214,6 +293,14 @@ both fall under International Services) — it lives on the main site at
 5. **F (effort tracker)** and **G (RIDE)** — independent of each other; F
    depends only on A (RBAC) and reuses D's subjective-scoring mechanism; G's
    points integration depends on D existing
+6. **H (member accounts)** — depends on A's multi-role `user_roles` model;
+   should build early since I, J, K all depend on it
+7. **I (personal dashboard)** — depends on H, and reuses F's approval
+   mechanism and D's `club_facts` (Paul Harris Fellow, etc.)
+8. **J (directory)** — depends only on H (skills/interests data existing)
+9. **K (gamification)** — depends on H, I (attendance/contribution data must
+   exist before badges can trigger); build last, it's the most deferrable
+   piece if timeline pressure hits
 
 ## Out of scope for this spec
 
