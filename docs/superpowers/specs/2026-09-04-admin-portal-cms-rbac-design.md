@@ -16,6 +16,15 @@ This spec covers five subsystems, each approved individually during
 brainstorming. Build order matters: A (RBAC) underlies everything; C (report
 schema) must exist before D (point rules) can reference report fields.
 
+**Datastore decision (confirmed 2026-09-04):** the NestJS API this spec
+implies targets the new self-managed Postgres 18 instance on Oracle
+(`rac3011-postgres`, already provisioned and already holds the migrated
+Supabase data — see `~/.claude/secrets.md`), not Supabase. This follows the
+planning call's explicit direction to move off Supabase (cost at scale,
+schema-normalization concerns). Supabase is retired once this API ships —
+until then, the live `staging`/`testing` frontends keep calling Supabase
+directly as a bridge, so nothing breaks mid-build.
+
 ---
 
 ## A. RBAC model
