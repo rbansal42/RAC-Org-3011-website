@@ -13,9 +13,17 @@ import {
   Globe,
   Layers,
   Compass,
-  Info
+  Info,
+  Phone,
+  Mail,
+  MessageSquare,
+  Copy,
+  Check,
+  UserCheck,
+  Shield
 } from 'lucide-react';
 import { parseExcelClubs, getParsedClubsFromExcel } from '../../data/excelReader';
+import { dbService } from '../../lib/supabaseClient';
 
 export const REGIONAL_ZONES = [
   {
@@ -116,18 +124,70 @@ export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }
   const [excelLoaded, setExcelLoaded] = useState(false);
 
   const [hoveredClub, setHoveredClub] = useState(null);
-  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0, transform: 'translate(-50%, -100%)' });
   const [activeSlideoutClub, setActiveSlideoutClub] = useState(null);
   const [activeZoneId, setActiveZoneId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [copiedField, setCopiedField] = useState(null);
+
+  const updateTooltipPos = (clientX, clientY) => {
+    const tooltipWidth = 320;
+    const padding = 20;
+    let x = clientX;
+    let y = clientY - 16;
+    let transform = 'translate(-50%, -100%)';
+
+    // Horizontal clamping: ensure tooltip never overflows left or right edges of viewport
+    if (x - tooltipWidth / 2 < padding) {
+      x = padding;
+      transform = 'translate(0%, -100%)';
+    } else if (x + tooltipWidth / 2 > window.innerWidth - padding) {
+      x = window.innerWidth - padding;
+      transform = 'translate(-100%, -100%)';
+    }
+
+    // Vertical clamping: if cursor is near top of screen (e.g. y < 200px), flip below cursor
+    if (clientY < 200) {
+      y = clientY + 24;
+      transform = transform.replace('-100%)', '0%)');
+    }
+
+    setTooltipPos({ x, y, transform });
+  };
+
+  const handleMouseMove = (e) => {
+    updateTooltipPos(e.clientX, e.clientY);
+  };
+
+  const handleCopy = (text, fieldKey) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldKey);
+    setTimeout(() => setCopiedField(null), 1800);
+  };
 
   useEffect(() => {
     let isMounted = true;
     
-    setActiveClubs(clubs);
+    if (clubs && clubs.length > 0) {
+      setActiveClubs(clubs);
+    }
 
-    async function loadExcelRoster() {
+    async function loadLiveClubs() {
+      // 1. Fetch live clubs directly from Supabase database
+      try {
+        const spClubs = await dbService.fetchClubs();
+        if (spClubs && spClubs.length > 0 && isMounted) {
+          setActiveClubs(spClubs);
+          setExcelLoaded(true);
+          return;
+        }
+      } catch (err) {
+        console.warn('Supabase clubs fetch error in DistrictMap:', err);
+      }
+
+      // 2. Fallback to parsed excel roster
       try {
         const parsed = await getParsedClubsFromExcel();
         if (parsed && parsed.length > 0 && isMounted) {
@@ -146,7 +206,10 @@ export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }
                 return {
                   ...c,
                   president: matched.president || c.president,
-                  isDirector: matched.isDirector || c.isDirector || ''
+                  isDirector: matched.isDirector || c.isDirector || '',
+                  phone: matched.phone || c.phone,
+                  email: matched.email || c.email,
+                  zone: matched.zone || c.zone
                 };
               }
               return c;
@@ -159,7 +222,7 @@ export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }
       }
     }
 
-    loadExcelRoster();
+    loadLiveClubs();
     return () => { isMounted = false; };
   }, [clubs]);
 
@@ -171,10 +234,6 @@ export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }
       setActiveSlideoutClub(null);
     }
   }, [selectedClubId, activeClubs]);
-
-  const handleMouseMove = (e) => {
-    setTooltipPos({ x: e.clientX, y: e.clientY });
-  };
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -282,7 +341,17 @@ export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }
 
       const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
 
-      marker.on('mouseover', () => setHoveredClub(club));
+      marker.on('mouseover', (e) => {
+        setHoveredClub(club);
+        if (e && e.originalEvent) {
+          updateTooltipPos(e.originalEvent.clientX, e.originalEvent.clientY);
+        }
+      });
+      marker.on('mousemove', (e) => {
+        if (e && e.originalEvent) {
+          updateTooltipPos(e.originalEvent.clientX, e.originalEvent.clientY);
+        }
+      });
       marker.on('mouseout', () => setHoveredClub(null));
       marker.on('click', () => {
         setActiveSlideoutClub(club);
@@ -577,10 +646,11 @@ export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }
           style={{
             left: `${tooltipPos.x}px`,
             top: `${tooltipPos.y}px`,
+            transform: tooltipPos.transform || 'translate(-50%, -100%)',
             zIndex: 10000
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
             <div 
               style={{
                 width: '8px',
@@ -595,19 +665,31 @@ export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }
             </span>
           </div>
 
-          <h4 style={{ fontSize: '1.05rem', fontWeight: 900, color: '#1E1E24', margin: '2px 0 6px 0' }}>
+          <h4 style={{ fontSize: '1.02rem', fontWeight: 900, color: '#1E1E24', margin: '2px 0 8px 0', lineHeight: 1.35, wordBreak: 'break-word' }}>
             {hoveredClub.name}
           </h4>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', color: '#4A4A5A', fontWeight: 700 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '0.85rem', color: '#4A4A5A', fontWeight: 700 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <User size={14} style={{ color: 'var(--skyline-gold-dark)' }} />
-              <span>President: {hoveredClub.president}</span>
+              <User size={14} style={{ color: 'var(--rotaract-pink)', flexShrink: 0 }} />
+              <span style={{ wordBreak: 'break-word' }}>President: {hoveredClub.president || 'Rtr. Club President'}</span>
             </div>
-            {hoveredClub.isDirector && (
+            {hoveredClub.secretary && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Globe size={14} style={{ color: '#123499' }} />
-                <span>International Services Director: {hoveredClub.isDirector}</span>
+                <UserCheck size={14} style={{ color: '#0284c7' }} />
+                <span>Secretary: {hoveredClub.secretary}</span>
+              </div>
+            )}
+            {hoveredClub.phone && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#166534' }}>
+                <Phone size={12} style={{ color: '#10b981' }} />
+                <span>{hoveredClub.phone}</span>
+              </div>
+            )}
+            {hoveredClub.isDirector && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}>
+                <Globe size={13} style={{ color: '#123499' }} />
+                <span>ISD: {hoveredClub.isDirector}</span>
               </div>
             )}
           </div>
@@ -688,52 +770,264 @@ export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }
                 </button>
               </div>
 
-              <div 
-                style={{
-                  background: '#FFF8FA',
-                  border: '1px solid #F3E5EB',
-                  borderRadius: '16px',
-                  padding: '16px 20px',
-                  marginBottom: '22px',
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-                  gap: '12px'
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '0.74rem', color: '#71717A', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Club President (RY 2026-27)
+              {/* Leadership & Personal Data from Database */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '22px' }}>
+                
+                {/* Club President Card */}
+                <div 
+                  style={{
+                    background: '#FFF8FA',
+                    border: '1.5px solid rgba(216, 27, 96, 0.2)',
+                    borderRadius: '16px',
+                    padding: '16px 18px',
+                    boxShadow: '0 4px 14px rgba(216, 27, 96, 0.05)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#D81B60', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <User size={13} /> Club President (RY 2026-27)
+                    </span>
+                    {currentSlideoutClub.rotaryId && (
+                      <span style={{ fontSize: '0.68rem', color: '#71717A', background: '#FFFFFF', border: '1px solid #E4E4E7', padding: '2px 8px', borderRadius: '100px', fontWeight: 700 }}>
+                        Rotary ID: {currentSlideoutClub.rotaryId}
+                      </span>
+                    )}
                   </div>
-                  <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#1E1E24', marginTop: '3px' }}>
-                    {currentSlideoutClub.president || '-'}
+
+                  <div style={{ fontSize: '1.08rem', fontWeight: 900, color: '#18181B' }}>
+                    {currentSlideoutClub.president || 'Rtr. Club President'}
                   </div>
-                  {currentSlideoutClub.email && (
-                    <a
-                      href={`mailto:${currentSlideoutClub.email}`}
-                      style={{ fontSize: '0.76rem', color: '#D81B60', fontWeight: 700, textDecoration: 'none', display: 'block', marginTop: '3px', wordBreak: 'break-all' }}
-                    >
-                      {currentSlideoutClub.email}
-                    </a>
+
+                  {/* President Contact Actions */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                    {currentSlideoutClub.phone && (
+                      <>
+                        <a
+                          href={`tel:${currentSlideoutClub.phone}`}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '6px 11px',
+                            borderRadius: '8px',
+                            background: '#FFFFFF',
+                            border: '1px solid #E4E4E7',
+                            color: '#0F172A',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <Phone size={12} style={{ color: '#10b981' }} /> {currentSlideoutClub.phone}
+                        </a>
+
+                        <a
+                          href={`https://wa.me/91${currentSlideoutClub.phone.replace(/[^0-9]/g, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '6px 11px',
+                            borderRadius: '8px',
+                            background: '#25D366',
+                            color: '#FFFFFF',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                            boxShadow: '0 2px 6px rgba(37, 211, 102, 0.3)'
+                          }}
+                        >
+                          <MessageSquare size={12} /> WhatsApp
+                        </a>
+
+                        <button
+                          onClick={() => handleCopy(currentSlideoutClub.phone, `phone-${currentSlideoutClub.id}`)}
+                          style={{
+                            background: '#FFFFFF',
+                            border: '1px solid #E4E4E7',
+                            borderRadius: '8px',
+                            padding: '6px 8px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '0.72rem',
+                            color: '#71717A'
+                          }}
+                          title="Copy phone"
+                        >
+                          {copiedField === `phone-${currentSlideoutClub.id}` ? <Check size={12} style={{ color: '#10b981' }} /> : <Copy size={12} />}
+                        </button>
+                      </>
+                    )}
+
+                    {currentSlideoutClub.email && (
+                      <a
+                        href={`mailto:${currentSlideoutClub.email}`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '6px 11px',
+                          borderRadius: '8px',
+                          background: '#FFFFFF',
+                          border: '1px solid #E4E4E7',
+                          color: '#D81B60',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          textDecoration: 'none',
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        <Mail size={12} /> {currentSlideoutClub.email}
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Club Secretary Card */}
+                {(currentSlideoutClub.secretary || currentSlideoutClub.secretaryPhone || currentSlideoutClub.secretaryEmail) && (
+                  <div 
+                    style={{
+                      background: '#F0FDF4',
+                      border: '1.5px solid rgba(16, 185, 129, 0.25)',
+                      borderRadius: '16px',
+                      padding: '16px 18px',
+                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.05)'
+                    }}
+                  >
+                    <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '6px' }}>
+                      <UserCheck size={13} /> Club Secretary (RY 2026-27)
+                    </div>
+
+                    <div style={{ fontSize: '1.05rem', fontWeight: 900, color: '#18181B' }}>
+                      {currentSlideoutClub.secretary || 'Rtr. Club Secretary'}
+                    </div>
+
+                    {/* Secretary Contact Actions */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                      {currentSlideoutClub.secretaryPhone && (
+                        <>
+                          <a
+                            href={`tel:${currentSlideoutClub.secretaryPhone}`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '6px 11px',
+                              borderRadius: '8px',
+                              background: '#FFFFFF',
+                              border: '1px solid #D1FAE5',
+                              color: '#0F172A',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              textDecoration: 'none'
+                            }}
+                          >
+                            <Phone size={12} style={{ color: '#059669' }} /> {currentSlideoutClub.secretaryPhone}
+                          </a>
+
+                          <a
+                            href={`https://wa.me/91${currentSlideoutClub.secretaryPhone.replace(/[^0-9]/g, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '6px 11px',
+                              borderRadius: '8px',
+                              background: '#25D366',
+                              color: '#FFFFFF',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              textDecoration: 'none',
+                              boxShadow: '0 2px 6px rgba(37, 211, 102, 0.3)'
+                            }}
+                          >
+                            <MessageSquare size={12} /> WhatsApp
+                          </a>
+
+                          <button
+                            onClick={() => handleCopy(currentSlideoutClub.secretaryPhone, `sec-phone-${currentSlideoutClub.id}`)}
+                            style={{
+                              background: '#FFFFFF',
+                              border: '1px solid #D1FAE5',
+                              borderRadius: '8px',
+                              padding: '6px 8px',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '0.72rem',
+                              color: '#71717A'
+                            }}
+                            title="Copy secretary phone"
+                          >
+                            {copiedField === `sec-phone-${currentSlideoutClub.id}` ? <Check size={12} style={{ color: '#10b981' }} /> : <Copy size={12} />}
+                          </button>
+                        </>
+                      )}
+
+                      {currentSlideoutClub.secretaryEmail && (
+                        <a
+                          href={`mailto:${currentSlideoutClub.secretaryEmail}`}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '6px 11px',
+                            borderRadius: '8px',
+                            background: '#FFFFFF',
+                            border: '1px solid #D1FAE5',
+                            color: '#059669',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <Mail size={12} /> {currentSlideoutClub.secretaryEmail}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ISD & Charter Year Row */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                  {currentSlideoutClub.isDirector && (
+                    <div style={{ background: '#EFF6FF', border: '1px solid #DBEAFE', borderRadius: '14px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '0.7rem', color: '#1E40AF', fontWeight: 800, textTransform: 'uppercase' }}>
+                        IS Director
+                      </div>
+                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#1E3A8A', marginTop: '3px' }}>
+                        {currentSlideoutClub.isDirector}
+                      </div>
+                    </div>
+                  )}
+
+                  {currentSlideoutClub.charterYear && (
+                    <div style={{ background: '#FFFBEB', border: '1px solid #FEF3C7', borderRadius: '14px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '0.7rem', color: '#92400E', fontWeight: 800, textTransform: 'uppercase' }}>
+                        Charter Year
+                      </div>
+                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#B45309', marginTop: '3px' }}>
+                        {currentSlideoutClub.charterYear}
+                      </div>
+                    </div>
                   )}
                 </div>
 
-                <div>
-                  <div style={{ fontSize: '0.74rem', color: '#71717A', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    International Services Director
-                  </div>
-                  <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#123499', marginTop: '3px' }}>
-                    {currentSlideoutClub.isDirector || currentSlideoutClub.internationalServicesDirector || '-'}
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ fontSize: '0.74rem', color: '#71717A', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Charter Year
-                  </div>
-                  <div style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--skyline-gold-dark)', marginTop: '3px' }}>
-                    {currentSlideoutClub.charterYear || '-'}
-                  </div>
-                </div>
               </div>
 
               <div style={{ marginBottom: '24px' }}>
