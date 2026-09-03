@@ -485,6 +485,91 @@ Confirmed 2026-09-04 as explicit requirements, not implied nice-to-haves:
 These fold into the design-refinement work already scoped in
 `docs/claude-design-prompt.md` rather than requiring a separate build phase.
 
+## S. Event RSVP + attendance tracking
+
+Added 2026-09-04 — closes a real gap: "attendance at district events" is
+one of the most heavily weighted categories in the points document (10/20/
+30/50 pts at 25/50/75/100% attendance brackets, plus per-leader and
+per-member bonuses), but `/calendar` was read-only with no way to actually
+capture who attended.
+
+- `events` — extends the district calendar entries (§ sitemap `/calendar`)
+  with `id`, `title`, `date`, `location`, `is_district_event` (bool — only
+  district-level events count toward the attendance point category, not
+  every club's own internal meeting)
+- `event_rsvps` — `event_id`, `member_id`, `club_id`, `status`
+  (`going | maybe | not_going`)
+- `event_checkins` — `event_id`, `member_id`, `checked_in_at`, `checked_in_by`
+  — the actual attendance record, distinct from RSVP intent. Uses the
+  digital QR member ID from Section H for check-in at the event.
+- **Feeds §D directly:** a club's attendance % for a given event/month =
+  count of `event_checkins` for that club's members ÷ total club membership
+  — this is exactly the ratio-based tiered `point_rule` pattern already
+  designed in Section D, just with a real data source now instead of an
+  unspecified one.
+
+## T. Multi-club collaborative projects
+
+Added 2026-09-04 — closes a real gap: the points document scores
+"initiating a project with up to 5/10/more than 10 clubs," but
+`project_submissions` only had a single `club_id`, so collaboration
+couldn't be counted from the data itself.
+
+- **`project_clubs`** — join table (`project_id`, `club_id`, `role`:
+  `lead | collaborator`) replaces the single `club_id` FK on
+  `project_submissions` with a proper many-to-many.
+- **Club references are always a real foreign key to `clubs.id`, never a
+  free-text club name field** — this applies retroactively to every place a
+  club is referenced across this spec (RIDE support/host clubs, effort log,
+  event RSVPs, showcase submissions) and is worth stating explicitly given
+  the planning call's own concern about agent-generated schemas defaulting
+  to duplicated name strings instead of proper relations. Any existing
+  free-text club name field encountered during implementation should be
+  migrated to a `club_id` FK, not left as-is.
+- **Feeds §D directly:** collaboration-count point tiers (up to 5 / up to 10
+  / more than 10 clubs) become a simple `count(project_clubs) group by
+  project_id` query instead of a manual `club_fact` entry.
+
+## U. Member feedback / grievance channel
+
+Added 2026-09-04. A simple channel for members to raise something to
+DSC/admin — not a full ticketing system.
+
+- `feedback` — `id`, `submitted_by` (member_id, nullable if anonymous
+  allowed — decide at build time), `category`, `message`, `event_id`
+  (nullable — see below), `status` (`open | reviewed | closed`),
+  `reviewed_by`, `reviewed_at`
+- **District events can specifically collect feedback**: when `event_id` is
+  set, this doubles as post-event feedback (tied to a specific `events` row
+  from Section S) rather than only general/unscoped feedback — one
+  mechanism serves both "feedback about the district in general" and
+  "feedback about this specific event."
+- Visibility: submitter sees their own submissions and any response; DSC/
+  Admin role sees all (`feedback:review` permission, unscoped).
+
+## V. Privacy Policy / Terms of Service pages
+
+Added 2026-09-04. Static pages, not a subsystem — `/privacy-policy` and
+`/terms-of-service` on the main site sitemap, content managed through the
+existing `content_blocks` CMS (Section B), same as any other free-form page
+copy. Real legal necessity given the member directory (Section J) holds PII
+(photos, skills/interests, club affiliation) across all 75 clubs — this
+should exist before the directory goes live, not after.
+
+## W. Segmented officer communication
+
+Added 2026-09-04 — extends `announcements` beyond its current broad
+`target_audience` free-text field. Officers need to reach specific slices,
+not just "all" or one audience tag:
+- Extend targeting to accept a real query, not a single tag: by role (e.g.
+  all Secretaries), by zone, by specific club(s), or a combination —
+  reusing the same `scope_type`/`scope_id` vocabulary already established
+  in Section A's RBAC model rather than inventing a separate targeting
+  syntax.
+- Delivery still goes through the shared notification-dispatch service from
+  Sections M/N (email + push) — segmentation only changes *who* the
+  announcement resolves to, not how it's delivered.
+
 ---
 
 ## Dependencies / build order
@@ -515,6 +600,20 @@ These fold into the design-refinement work already scoped in
     whenever; Q is explicitly non-blocking
 13. **R (accessibility/SEO/mobile-first)** — not a phase, a standard applied
     throughout every other phase's frontend work
+14. **S (event RSVP/attendance)** — depends on H (member accounts, QR ID)
+    and feeds D's attendance point tiers; build alongside or right after H
+15. **T (multi-club projects)** — depends on the `clubs` table (already
+    exists) and feeds D's collaboration-count point tiers; independent of
+    everything except D
+16. **U (feedback/grievance)** — depends on H (member accounts) and
+    optionally S (event-scoped feedback); low priority, no other subsystem
+    depends on it
+17. **V (privacy/terms pages)** — depends only on B (CMS); should ship
+    **before** J (member directory) goes live, not after, given it's the
+    legal basis for holding member PII
+18. **W (segmented communication)** — depends on A (reuses scope vocabulary)
+    and M/N (delivery); extends the existing `announcements` feature rather
+    than being a new one
 
 ## Out of scope for this spec
 

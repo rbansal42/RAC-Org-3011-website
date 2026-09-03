@@ -102,23 +102,27 @@ presentation on the 6th is just the first checkpoint, not the finish line.
 /achievements                  — Newly chartered clubs
 /partners
 /contact
-/calendar                      — District Calendar (events + downloadable year calendar)
+/calendar                      — District Calendar (events, RSVP, downloadable year calendar)
+├── /calendar/[event-id]        — Event detail + RSVP
 /drr-calendar                  — DRR's Calendar (Google Calendar-backed booking)
 ├── /drr-calendar/book/[slot-id]
 └── /drr-calendar/admin
+/privacy-policy
+/terms-of-service
 
 /portal/register                — Member self-registration
 /portal/pending                 — Awaiting officer approval
 /portal/dashboard               — Role-aware landing
 /portal/profile                 — Photo, bio, skills, interests, anniversary
 /portal/my-club                 — Read-only club roster/projects/reports/announcements
-/portal/showcase/new            — Submit a project (member or officer)
+/portal/showcase/new            — Submit a project (member or officer), tag collaborating clubs
 /portal/contributions
 ├── /portal/contributions/new
 └── /portal/contributions/mine
 /portal/certificates
 /portal/badges
 /portal/directory               — District-wide member search
+/portal/feedback                — Submit feedback/grievance (general or tied to an event)
 /portal/reports
 ├── /portal/reports/new
 └── /portal/reports/history
@@ -132,6 +136,9 @@ presentation on the 6th is just the first checkpoint, not the finish line.
 ├── /portal/admin/roles         — RBAC: manage roles/permissions
 ├── /portal/admin/report-form   — Form-builder: report_form_schema
 ├── /portal/admin/point-rules   — Configure objective point rules
+├── /portal/admin/events        — Create/manage events, view RSVPs, check-in
+├── /portal/admin/feedback      — Review member feedback/grievances
+├── /portal/admin/announcements — Segmented targeting (role/zone/club)
 └── /portal/admin/settings      — Site-wide settings
 ```
 
@@ -340,6 +347,27 @@ Full detail for all of these is in
 `docs/superpowers/specs/2026-09-04-admin-portal-cms-rbac-design.md`
 (sections L-R), same as A-K.
 
+### S-W. Additional features (added 2026-09-04, from feature-gap review)
+
+- **S. Event RSVP + attendance tracking** — `/calendar` events get RSVP and
+  QR check-in; feeds the attendance-percentage point brackets in §6.D
+  directly, which previously had no real data source.
+- **T. Multi-club collaborative projects** — `project_clubs` join table
+  replaces a single `club_id` on project submissions, so the
+  collaboration-count point category (up to 5/10/more-than-10 clubs) can be
+  computed from real data instead of manual entry. **Every club reference
+  anywhere in this spec is a foreign key to `clubs.id`, never a free-text
+  name field** — stated explicitly given the planning call's own concern
+  about agent-generated schemas defaulting to duplicated strings.
+- **U. Member feedback/grievance channel** — general or event-scoped (ties
+  to §S), reviewed by DSC/Admin.
+- **V. Privacy Policy / Terms of Service** — static CMS-managed pages;
+  should exist **before** the member directory (§6.J) goes live, given it's
+  the legal basis for holding member PII.
+- **W. Segmented officer communication** — extends `announcements` targeting
+  to role/zone/club combinations (reusing §6.A's scope vocabulary) instead
+  of a single broad audience tag.
+
 ## 7. Design direction
 
 Full brief in `docs/claude-design-prompt.md`. Summary: this is a refinement
@@ -377,6 +405,15 @@ the data genuinely needs it.
     slot in whenever; Q is explicitly non-blocking
 14. **Accessibility/SEO/mobile-first (§6.R)** — not a phase, a standard
     applied throughout every other phase's frontend work
+15. **Event RSVP/attendance (§6.S)** — depends on H (member accounts/QR ID),
+    feeds D's attendance point tiers; build alongside or right after H
+16. **Multi-club projects (§6.T)** — depends only on `clubs` (exists
+    already); feeds D's collaboration point tiers
+17. **Feedback/grievance (§6.U)** — depends on H, optionally S; low priority
+18. **Privacy/Terms pages (§6.V)** — depends only on CMS (§6.B); ship
+    **before** the member directory (§6.J) goes live
+19. **Segmented communication (§6.W)** — depends on A and M/N; extends
+    existing announcements rather than being new infrastructure
 
 ## 9. Explicit non-goals
 
