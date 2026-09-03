@@ -1,3 +1,36 @@
+@import "tailwindcss";
+
+/* Tailwind v4 theme tokens — mapped 1:1 from the site's existing custom
+   properties below, per the Claude Design refinement session
+   (design-export/chats/chat1.md). The three identical --skyline-gold
+   variants collapse to one `navy` token; the gold shadows that referenced
+   them were dead (design system was never fully wired to gold) and are
+   dropped rather than ported. */
+@theme {
+  --color-rotaract-pink: #D81B60;
+  --color-rotaract-pink-hover: #C21350;
+  --color-rotaract-pink-light: #FDF0F5;
+  --color-rotaract-pink-subtle: #FBE4EC;
+  --color-cranberry-dark: #880E4F;
+  --color-navy: #123499;
+
+  --color-bg-main: #FFFFFF;
+  --color-bg-subtle: #FDF8FA;
+  --color-bg-card: #FFFFFF;
+
+  --color-text-primary: #1E1E24;
+  --color-text-secondary: #4A4A5A;
+  --color-text-muted: #71717A;
+
+  --color-border-light: #F3E5EB;
+
+  --shadow-rotaract-sm: 0 4px 15px rgba(216, 27, 96, 0.04);
+  --shadow-rotaract-md: 0 10px 30px rgba(216, 27, 96, 0.08);
+  --shadow-rotaract-lg: 0 20px 50px rgba(216, 27, 96, 0.14);
+
+  --font-sans: 'Montserrat', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
 :root {
   /* Rotaract Brand Colors */
   --rotaract-pink: #D81B60;

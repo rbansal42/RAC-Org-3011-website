@@ -1,7 +1,8 @@
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
-function apiServerPlugin() {
+function apiServerPlugin(): Plugin {
   return {
     name: 'api-server-middleware',
     configureServer(server) {
@@ -33,18 +34,18 @@ function apiServerPlugin() {
 
             // Import the serverless handler
             const { default: handler } = await import('./api/send-email.js');
-            
+
             // Mock req & res for the Vercel handler
             const mockReq = {
               method: 'POST',
               body: parsed
             };
             const mockRes = {
-              setHeader(k, v) { res.setHeader(k, v); },
-              status(code) {
+              setHeader(k: string, v: string) { res.setHeader(k, v); },
+              status(code: number) {
                 res.statusCode = code;
                 return {
-                  json(data) {
+                  json(data: unknown) {
                     res.setHeader('Content-Type', 'application/json');
                     res.end(JSON.stringify(data));
                   },
@@ -57,7 +58,7 @@ function apiServerPlugin() {
           } catch (err) {
             console.error('[Vite API Middleware Error]', err);
             res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: err.message }));
+            res.end(JSON.stringify({ success: false, error: (err as Error).message }));
           }
         });
       });
@@ -67,7 +68,7 @@ function apiServerPlugin() {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), apiServerPlugin()],
+  plugins: [react(), tailwindcss(), apiServerPlugin()],
   build: {
     rollupOptions: {
       output: {
