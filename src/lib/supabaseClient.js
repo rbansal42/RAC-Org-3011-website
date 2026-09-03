@@ -100,6 +100,19 @@ const parseSubFromDB = (item) => {
   };
 };
 
+const CLUBS_CACHE_KEY = 'd3011_clubs_cache_v2';
+const CLUBS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes TTL
+let inMemoryClubsCache = null;
+let inMemoryClubsTimestamp = 0;
+
+export const invalidateClubsCache = () => {
+  inMemoryClubsCache = null;
+  inMemoryClubsTimestamp = 0;
+  try {
+    sessionStorage.removeItem(CLUBS_CACHE_KEY);
+  } catch (e) {}
+};
+
 export const dbService = {
   authenticateUser: async (rotaryIdInput, passwordInput) => {
     const cleanId = rotaryIdInput ? rotaryIdInput.trim() : '';
@@ -162,7 +175,25 @@ export const dbService = {
     return { success: false, error: 'Incorrect Rotary ID/Email or Portal Password.' };
   },
 
-  fetchClubs: async () => {
+  fetchClubs: async (forceRefresh = false) => {
+    const now = Date.now();
+    if (!forceRefresh) {
+      if (inMemoryClubsCache && now - inMemoryClubsTimestamp < CLUBS_CACHE_TTL) {
+        return inMemoryClubsCache;
+      }
+      try {
+        const cachedRaw = sessionStorage.getItem(CLUBS_CACHE_KEY);
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          if (parsed && parsed.timestamp && now - parsed.timestamp < CLUBS_CACHE_TTL && Array.isArray(parsed.data)) {
+            inMemoryClubsCache = parsed.data;
+            inMemoryClubsTimestamp = parsed.timestamp;
+            return parsed.data;
+          }
+        }
+      } catch (e) {}
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
         // Fetch from dedicated 'clubs' table in Supabase if it exists
@@ -171,7 +202,7 @@ export const dbService = {
           .select('*');
 
         if (!clubsErr && clubsTableData && clubsTableData.length > 0) {
-          return clubsTableData.map((c, idx) => ({
+          const mapped = clubsTableData.map((c, idx) => ({
             id: c.id || `sp-club-${idx}`,
             name: c.name || c.club_name,
             shortName: c.short_name || (c.name || c.club_name || '').replace(/^(Rotaract\s+(Club\s+of\s+)?|RAC\s+)/i, '').trim(),
@@ -189,6 +220,14 @@ export const dbService = {
             lng: typeof c.lng === 'number' ? c.lng : (parseFloat(c.lng) || 77.2090),
             initiatives: c.initiatives || []
           }));
+
+          inMemoryClubsCache = mapped;
+          inMemoryClubsTimestamp = now;
+          try {
+            sessionStorage.setItem(CLUBS_CACHE_KEY, JSON.stringify({ data: mapped, timestamp: now }));
+          } catch (e) {}
+
+          return mapped;
         }
       } catch (err) {
         console.warn('Supabase fetchClubs notice:', err);

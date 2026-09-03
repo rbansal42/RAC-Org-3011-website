@@ -4,10 +4,6 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/images.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Automatic Cache-Busting for Fresh Production Deployments -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
     <title>Rotaract District Organization 3011 | Official Website</title>
     <!-- Preload Rotary Wheel Anchor Image for Instant 60FPS Initial Render -->
     <link rel="preload" as="image" href="/images.png" type="image/png" fetchpriority="high" />
@@ -16,11 +12,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Dancing+Script:wght@400;600;700&family=Great+Vibes&family=Alex+Brush&family=Satisfy&display=swap" rel="stylesheet">
     
-    <!-- Mapbox GL JS & Leaflet Satellite CDN -->
+    <!-- Mapbox GL JS & Leaflet Satellite CDN (Deferred to prevent render blocking) -->
     <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
-    <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+    <script defer src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   </head>
   <body>
     <div id="root"></div>

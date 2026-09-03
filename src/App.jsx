@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Navbar from './components/Layout/Navbar';
 import Footer from './components/Layout/Footer';
 import PublicHome from './components/Pages/PublicHome';
-import DistrictAccess from './components/Pages/DistrictAccess';
+const DistrictAccess = React.lazy(() => import('./components/Pages/DistrictAccess'));
 const PortalPage = React.lazy(() => import('./components/Pages/PortalPage'));
 import LoginModal from './components/Modals/LoginModal';
 import PresidentModal from './components/Modals/PresidentModal';
@@ -325,18 +325,27 @@ export default function App() {
         )}
 
         {activePage === 'district' && (
-          <DistrictAccess
-            clubs={clubs}
-            activeDistrictTab={activeDistrictTab}
-            isLoggedIn={isLoggedIn}
-            userRole={userRole}
-            onOpenLoginModal={() => setIsLoginModalOpen(true)}
-            onOpenUploadClubModal={() => setUploaderModalMode('uploadClub')}
-            onOpenPostInitiativeModal={(club) => {
-              setPreselectedClubForModal(club);
-              setUploaderModalMode('postInitiative');
-            }}
-          />
+          <Suspense fallback={
+            <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+              <RotaryLoaderLogo size={64} />
+              <div style={{ fontSize: '0.86rem', fontWeight: 800, color: 'var(--rotaract-pink)', letterSpacing: '1px' }}>
+                LOADING DISTRICT 3011 DIRECTORY...
+              </div>
+            </div>
+          }>
+            <DistrictAccess
+              clubs={clubs}
+              activeDistrictTab={activeDistrictTab}
+              isLoggedIn={isLoggedIn}
+              userRole={userRole}
+              onOpenLoginModal={() => setIsLoginModalOpen(true)}
+              onOpenUploadClubModal={() => setUploaderModalMode('uploadClub')}
+              onOpenPostInitiativeModal={(club) => {
+                setPreselectedClubForModal(club);
+                setUploaderModalMode('postInitiative');
+              }}
+            />
+          </Suspense>
         )}
 
         {activePage === 'portal' && (
