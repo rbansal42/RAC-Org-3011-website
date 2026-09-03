@@ -145,6 +145,56 @@ global toggles that are neither content nor permissions:
 
 ---
 
+## F. Effort tracker (internal, not public)
+
+DRR informally pulls in Presidents/Secretaries/club members for ad-hoc help
+outside formal projects (e.g. a club member editing a release video, another
+doing data sorting) — currently tracked in a personal spreadsheet. Needs a
+lightweight internal log, not a public page:
+
+- `effort_log` — `id`, `person_name`, `club_id`, `task_description`, `hours`,
+  `date`, `logged_by` (admin user), `points_awarded` (nullable)
+- Admin screen at `/portal/admin/effort-log` — DSC/Admin/DRR only, not public.
+  Uses the same RBAC (Section A) gating as every other admin screen.
+- **Points are entirely discretionary** — the DRR assigns `points_awarded`
+  per entry at their own judgment. This is the **subjective** scoring path
+  (same mechanism as manual project/report points in Section D), not a new
+  auto-computed rule — the official points document has no category for this.
+- **No standing public list.** When Archit wants to spotlight a specific
+  entry, it's surfaced manually as a `content_blocks` highlight (Section B) —
+  e.g. pulled into `/leadership` or `/achievements` — not a permanent public
+  route.
+
+---
+
+## G. RIDE subdomain
+
+`ride.rotaract3011.org` — follows the same subdomain pattern as the four
+bid-out flagship projects (Mission 3011, Drishti, RCL, Career Bridge), though
+RIDE itself isn't one of the four bid-out projects — it's a recurring
+district program.
+
+- `/support-club` — clubs register once as a district-wide "Support Club"
+  for RIDE (not tied to a specific delegation)
+- `/incoming` — incoming RIDE delegations (visiting district, dates,
+  contact); **host clubs are assigned per delegation from the pool of
+  registered support clubs**, not registered directly as "host"
+- `/gallery` — media from the past 2 RIDEs (7-8 photos, 1-2 videos)
+- `/admin` — manage incoming delegations, review support-club sign-ups,
+  assign host clubs per delegation
+
+**Points integration:** support-club participation and delegation
+hosting/visiting feed the existing RIDE point rules from the official points
+document (International Services category: hosting 40/day, visiting 30/day,
+sending member 30/member, +50 for both) — these are `point_rules` entries
+with `source: club_fact:<key>` (Section D), auto-computed, not manual.
+
+**Sister Club form is explicitly separate from RIDE** (easy to conflate,
+both fall under International Services) — it lives on the main site at
+`/resources/sister-club`, not on the RIDE subdomain.
+
+---
+
 ## Dependencies / build order
 
 1. **A (RBAC)** — foundational, needed before any admin screen can be gated
@@ -152,6 +202,9 @@ global toggles that are neither content nor permissions:
    parallel once A exists
 3. **C (report schema)** — must exist before D can reference report fields
 4. **D (point rules)** — depends on C; `club_facts` half is independent of C
+5. **F (effort tracker)** and **G (RIDE)** — independent of each other; F
+   depends only on A (RBAC) and reuses D's subjective-scoring mechanism; G's
+   points integration depends on D existing
 
 ## Out of scope for this spec
 
