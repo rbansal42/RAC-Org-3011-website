@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap">
+<script src="./doc-page.js"></script>
+<style>
+doc-page:not(:defined){visibility:hidden}
+a{color:#D81B60;text-decoration:none;border-bottom:1px solid #FBE4EC}
+a:hover{color:#C21350;border-bottom-color:#D81B60}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.84em;background:#FDF0F5;color:#880E4F;padding:1px 5px;border-radius:4px;border:1px solid #FBE4EC}
+</style>
+</helmet>
+<doc-page margin="0.7in" style="color:#1E1E24; font-family:'Montserrat',sans-serif; font-size:15px; line-height:1.62"><div>
+
+<p style="display:inline-flex; align-items:center; background:#FDF0F5; border:1px solid rgba(216,27,96,0.2); color:#D81B60; padding:5px 14px; border-radius:6px; font-size:11.5px; font-weight:700; letter-spacing:1px; margin:0 0 16px">ROTARACT DISTRICT 3011 · DESIGN REVIEW</p>
+<h1 style="font-family:'Montserrat',sans-serif; font-weight:800; font-size:34px; line-height:1.15; letter-spacing:-0.4px; margin:0 0 10px">Refinement pass, part one</h1>
+<p style="font-size:16px; color:#4A4A5A; margin:0 0 6px">Rotaract District 3011 — Home, Map, Showcase. Diagnosis and specification.</p>
+<p style="font-size:13px; color:#8A8A94; margin:0 0 40px">Read from <code>rac-org-3011-website</code> at commit-in-hand, 3 September 2026. Line references are to the files as they stand.</p>
+
+<h2 style="font-family:'Montserrat',sans-serif; font-weight:800; font-size:23px; letter-spacing:-0.2px; margin:0 0 6px">Where the brief and the repository part company</h2>
+<p style="margin:0 0 18px; color:#2E2E38">Four points, in the order they matter. The first two are now settled decisions and are recorded here so the next person doesn't relitigate them; the last two are live mismatches that still need resolving.</p>
+
+<div style="display:grid; gap:14px; margin:0 0 36px">
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">Tailwind doesn't exist yet — it's the target, not the source.</p>
+    <p style="margin:0; color:#4A4A5A">The site today is Vite + React styled with inline style objects and one 1,015-line <code>src/index.css</code>; there's no <code>tailwind.config</code> and Tailwind isn't in <code>package.json</code>. Since Tailwind is now the plan, the first job is porting the <code>:root</code> custom properties out of that stylesheet into <code>theme.extend</code> rather than authoring a fresh scale — the values below are the ones to carry over verbatim. Do this before any page work: adding Tailwind alongside 1,015 lines of live CSS and several hundred inline style objects means three styling systems competing, and whichever lands last wins by accident.</p>
+  </div>
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">The palette is the current site's, not maroon on cream.</p>
+    <p style="margin:0 0 10px; color:#4A4A5A">Settled: the live values stand. <code>#D81B60</code> is a magenta-pink, not a burgundy, and it sits on <code>#FFFFFF</code> with <code>#FDF8FA</code> as the subtle ground — a pink-tinted near-white rather than a cream. <code>--rotaract-cranberry-dark #880E4F</code> is declared but barely used, and it's the one worth putting to work: it's the only value in the file with enough contrast for accent-coloured body text, which <code>#D81B60</code> doesn't have at paragraph sizes.</p>
+    <p style="margin:0; color:#4A4A5A">This document is set in that palette, so it doubles as the reference.</p>
+  </div>
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">The gold layer is contradictory, not merely unused.</p>
+    <p style="margin:0; color:#4A4A5A"><code>--skyline-gold</code>, <code>--skyline-gold-light</code> and <code>--skyline-gold-dark</code> are all set to the same value, <code>#123499</code> — a navy blue. Meanwhile <code>.btn-gold</code> and <code>.pill-gold</code> still carry gold <code>rgba(197,160,89)</code> shadows. So a blue button glows gold. "Reuse the existing tokens" inherits this; it needs resolving before anything else consumes those three variables.</p>
+  </div>
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">Showcase is not an existing page.</p>
+    <p style="margin:0; color:#4A4A5A">There's no router — <code>App.jsx</code> hand-rolls a <code>ROUTE_MAP</code> of eight paths over <code>pushState</code>, with no 404 branch, so any unknown URL silently renders home. <code>/showcase</code> is not among them. The closest existing thing is <code>ClubInitiativesList.jsx</code>, nested inside <code>/directory</code>. Section 3 below is therefore a specification, not a before/after.</p>
+  </div>
+</div>
+
+<h2 style="font-family:'Montserrat',sans-serif; font-weight:800; font-size:23px; letter-spacing:-0.2px; margin:0 0 6px">The token set to port into Tailwind</h2>
+<p style="margin:0 0 18px; color:#2E2E38">Lifted from <code>src/index.css</code>. Two decisions are baked in: the three <code>--skyline-gold</code> variables collapse to one <code>navy</code> entry, since they all hold the same navy value and nothing needs three names for it; and the gold shadows on <code>.btn-gold</code> and <code>.pill-gold</code> are dropped rather than ported.</p>
+
+<table style="width:100%; border-collapse:collapse; border-top:2px solid #D81B60; margin:0 0 14px; font-size:13.5px">
+  <thead><tr>
+    <th style="text-align:left; width:26%; padding:9px 14px 9px 0; font-weight:700; font-size:11.5px; letter-spacing:0.8px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB">Tailwind key</th>
+    <th style="text-align:left; width:24%; padding:9px 14px 9px 0; font-weight:700; font-size:11.5px; letter-spacing:0.8px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB">Value</th>
+    <th style="text-align:left; padding:9px 0; font-weight:700; font-size:11.5px; letter-spacing:0.8px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB">Role</th>
+  </tr></thead>
+  <tbody>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>pink.DEFAULT</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>#D81B60</code></td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">The brand. Fills, borders, icons, headings — not paragraph text.</td></tr>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>pink.hover</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>#C21350</code></td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Hover and pressed states.</td></tr>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>pink.light</code> / <code>pink.subtle</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>#FDF0F5</code> / <code>#FBE4EC</code></td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Tinted fills — pills, tags, hovers on white.</td></tr>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>cranberry</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>#880E4F</code></td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Accent-coloured <em>text</em>, and text on pink tints. Currently under-used.</td></tr>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>navy</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>#123499</code></td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">The secondary. One name, not three.</td></tr>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>surface</code> / <code>surface.subtle</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>#FFFFFF</code> / <code>#FDF8FA</code></td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Card and page grounds.</td></tr>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>ink</code> / <code>ink.muted</code> / <code>ink.faint</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>#1E1E24</code> / <code>#4A4A5A</code> / <code>#71717A</code></td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">The three text weights. Nothing else.</td></tr>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>border.subtle</code> / <code>border.light</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>rgba(216,27,96,.12)</code> / <code>#F3E5EB</code></td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Hairlines — the tinted one on white, the solid one on tints.</td></tr>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>boxShadow.sm/md/lg</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">pink-tinted</td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Already coherent in <code>index.css</code> — port as-is, and never stack them.</td></tr>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>fontFamily.sans</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Montserrat</td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">One family throughout. Delete the <code>!important</code> font rules on <code>*</code> and on every element — Tailwind's base layer makes them unnecessary, and they will fight utility classes.</td></tr>
+    <tr><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38"><code>borderRadius</code></td><td style="padding:10px 14px 10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">8px / 16px</td><td style="padding:10px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Buttons and pills at 8, cards at 16. The site already does this — make it the only two options.</td></tr>
+  </tbody>
+</table>
+<p style="margin:0 0 36px; color:#71717A; font-size:13.5px">Three patterns are worth extracting as components on day one, because they already recur across every page: <code>.rotaract-card</code>, the <code>.btn-rotaract</code> pair (filled and outline), and <code>.pill-pink</code>.</p>
+
+<h2 style="font-family:'Montserrat',sans-serif; font-weight:800; font-size:23px; letter-spacing:-0.2px; margin:0 0 6px">1. Home</h2>
+<p style="margin:0 0 20px; color:#2E2E38">The sluggishness is not diffuse. It is four rules in <code>index.css</code>, lines 301–338.</p>
+
+<div style="background:#FDF8FA; border:1px solid #F3E5EB; border-radius:16px; box-shadow:0 4px 15px rgba(216,27,96,0.04); padding:18px 20px; margin:0 0 20px; break-inside:avoid">
+  <p style="margin:0 0 10px; font-size:12px; letter-spacing:1px; text-transform:uppercase; color:#71717A">The cause</p>
+  <p style="margin:0 0 10px; color:#2E2E38"><code>scroll-snap-stop: always</code> on every full-height section forbids skipping. A visitor physically cannot flick down the page; each section is a mandatory stop. That is the scroll-jacking — it isn't JavaScript hijacking the wheel, it's CSS refusing to let go of it.</p>
+  <p style="margin:0 0 10px; color:#2E2E38"><code>scroll-behavior: smooth</code> on the same container animates every one of those forced stops, so a single wheel tick buys a full transition before the next input is honoured.</p>
+  <p style="margin:0; color:#2E2E38"><code>height</code>, <code>min-height</code> and <code>max-height</code> all pinned to <code>100vh</code> with <code>overflow: hidden</code> means anything that doesn't fit is clipped rather than scrolled, and the whole page re-lays-out every time mobile browser chrome shows or hides.</p>
+</div>
+
+<p style="margin:0 0 8px; color:#2E2E38">Layered on top, the hero runs five animations simultaneously:</p>
+<ul style="margin:0 0 20px; padding-left:20px; color:#4A4A5A">
+  <li style="margin-bottom:5px"><code>ScrambleTitle</code> — a 45ms <code>setInterval</code> doing a full split/map/join across the string on every tick, randomising letters until it settles.</li>
+  <li style="margin-bottom:5px"><code>TypewriterText</code> — a second interval, one character at a time.</li>
+  <li style="margin-bottom:5px"><code>InteractiveDotGrid</code> — a canvas particle field spelling out "Fellowships through service".</li>
+  <li style="margin-bottom:5px"><code>BigRotaryWheel</code> — scroll-position-driven transforms, with its own rAF loop.</li>
+  <li style="margin-bottom:5px">The <code>sectionFadeUp</code> keyframe on every section entry.</li>
+</ul>
+<p style="margin:0 0 20px; color:#4A4A5A">Plus the custom two-part cursor in <code>App.jsx</code>, which on every <code>mousemove</code> runs <code>e.target.closest('[data-cursor]')</code> — an ancestor walk per pointer event — and then calls <code>setState</code>. And before any of it: a fixed 2.2-second pink curtain on first load, followed by a second full-screen glass spinner on each tab change.</p>
+
+<h3 style="font-family:'Montserrat',sans-serif; font-weight:700; font-size:17px; margin:26px 0 10px">After</h3>
+<table style="width:100%; border-collapse:collapse; border-top:2px solid #D81B60; margin:0 0 14px; font-size:13.5px">
+  <thead><tr><th style="text-align:left; width:38%; padding:9px 14px 9px 0; font-weight:700; font-size:11.5px; letter-spacing:0.8px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB">Change</th><th style="text-align:left; padding:9px 0; font-weight:700; font-size:11.5px; letter-spacing:0.8px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB">What it buys</th></tr></thead>
+  <tbody>
+    <tr><td style="padding:11px 14px 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Delete the whole snap layer — <code>.snap-container</code>, <code>.snap-section</code>, <code>.snap-section-footer</code> and the mobile <code>!important</code> overrides that undo them</td><td style="padding:11px 0 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Sections become ordinary blocks with <code>min-height</code> and real padding. Scroll becomes free. This alone is most of the fix.</td></tr>
+    <tr><td style="padding:11px 14px 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Drop <code>height:100vh; overflow:hidden</code> from <code>html, body</code> and the <code>overflow:hidden</code> flex root in <code>App.jsx</code></td><td style="padding:11px 0 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Scrolling returns to the document: mobile chrome behaves, scroll restoration works, anchors and browser find work.</td></tr>
+    <tr><td style="padding:11px 14px 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Keep one hero motion — the photo carousel. Retire Scramble, Typewriter and the dot grid</td><td style="padding:11px 0 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">The carousel is the only one carrying content. The scramble in particular means the first thing a stranger sees where the district's name should be is random characters, and it sets <code>user-select: none</code>, so the name can't even be copied.</td></tr>
+    <tr><td style="padding:11px 14px 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Rebuild the carousel as an <code>overflow-x: auto</code> strip with <code>scroll-snap-type: x mandatory</code>, autoplayed by one interval calling <code>scrollTo</code>, cancelled on <code>pointerdown</code></td><td style="padding:11px 0 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Snap on the X axis never touches page scroll. Native momentum, keyboard and touch come free. Reserve each slide with <code>aspect-ratio</code> so nothing shifts as images arrive.</td></tr>
+    <tr><td style="padding:11px 14px 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Cut the curtain to 600ms, or tie it to first paint rather than a timer; replace the tab-change spinner with skeletons</td><td style="padding:11px 0 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Removes roughly two seconds from every first visit — the single largest perceived-speed win available.</td></tr>
+    <tr><td style="padding:11px 14px 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Remove the custom cursor. If it must stay: move the <code>[data-cursor]</code> lookup to <code>pointerover</code>/<code>pointerout</code> delegation and toggle a class on the ref instead of calling <code>setState</code></td><td style="padding:11px 0 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Takes an ancestor walk and a React render off the pointer-move path.</td></tr>
+  </tbody>
+</table>
+<p style="margin:0 0 36px; color:#71717A; font-size:13.5px">Two content fixes from <code>features.md</code> are still outstanding in this file: <code>ORGANISATION</code> at line 655, and <code>70+ clubs</code> in both the hero (line 692) and <code>Footer.jsx</code> (line 55).</p>
+
+<h2 style="font-family:'Montserrat',sans-serif; font-weight:800; font-size:23px; letter-spacing:-0.2px; margin:0 0 6px">2. Map</h2>
+<p style="margin:0 0 20px; color:#2E2E38">The heaviest page, and the causes are specific rather than inherent to maps.</p>
+
+<div style="display:grid; gap:14px; margin:0 0 22px">
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">Two raster tile layers load on every visit.</p>
+    <p style="margin:0; color:#4A4A5A">Esri <code>World_Imagery</code> satellite, then a Carto <code>voyager_only_labels</code> overlay at <code>opacity: 0.9</code> on top of it. Satellite is the heaviest basemap available and it's the default, so every visitor pays for imagery before anyone has asked to see it — doubled, because the labels come as a second full tile set.</p>
+  </div>
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">Every marker is destroyed and rebuilt on every keystroke.</p>
+    <p style="margin:0; color:#4A4A5A"><code>renderLeafletMarkers</code> opens by removing all markers, then re-creates the filtered set — and it's wired to an effect keyed on <code>activeClubs</code>, <code>searchQuery</code> and <code>activeZoneId</code> with no debounce. Typing four letters into search tears down and re-creates the full pin set four times, each pin a <code>divIcon</code> carrying the <code>.leaflet-neon-marker</code> glow, whose layered box-shadows then repaint as the map moves.</p>
+  </div>
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">Zone filtering sniffs strings.</p>
+    <p style="margin:0; color:#4A4A5A">Each zone is matched by a hand-written list of substring aliases — <code>includes('prithvi') || includes('south')</code>, and so on for four zones. A club whose zone field is spelled any other way silently disappears from the map instead of failing loudly.</p>
+  </div>
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">Club records are joined by fuzzy name match, twice.</p>
+    <p style="margin:0; color:#4A4A5A">The Excel roster is matched to club records by stripping <code>rotaract</code>, <code>club</code>, <code>of</code> and whitespace, then testing substring containment in both directions. Any club name that is a prefix of a longer one will collide, so presidents, phone numbers and blood groups can attach to the wrong club — quietly. The same routine is duplicated in <code>App.jsx</code> and <code>DistrictMap.jsx</code>, so the two can disagree. This is the schema concern from the planning call showing up as a rendering bug.</p>
+  </div>
+</div>
+
+<h3 style="font-family:'Montserrat',sans-serif; font-weight:700; font-size:17px; margin:26px 0 10px">After</h3>
+<table style="width:100%; border-collapse:collapse; border-top:2px solid #D81B60; margin:0 0 18px; font-size:13.5px">
+  <thead><tr><th style="text-align:left; width:38%; padding:9px 14px 9px 0; font-weight:700; font-size:11.5px; letter-spacing:0.8px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB">Change</th><th style="text-align:left; padding:9px 0; font-weight:700; font-size:11.5px; letter-spacing:0.8px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB">What it buys</th></tr></thead>
+  <tbody>
+    <tr><td style="padding:11px 14px 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Default to the light Carto basemap alone; satellite becomes a toggle that adds the Esri layer on demand</td><td style="padding:11px 0 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">One tile set at rest instead of two, and the light one. Satellite stays available for the people who actually want it.</td></tr>
+    <tr><td style="padding:11px 14px 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Hold a marker map keyed by club id; on filter change add and remove only the delta. Debounce search at 200ms</td><td style="padding:11px 0 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Typing stops rebuilding the map. Pins that stay visible never re-mount, so their glow never re-rasterises.</td></tr>
+    <tr><td style="padding:11px 14px 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Resolve zone to an id once at data load and filter on equality</td><td style="padding:11px 0 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">A mis-spelled zone becomes a visible data error rather than a vanished club.</td></tr>
+    <tr><td style="padding:11px 14px 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Join clubs on a stable id, in one place</td><td style="padding:11px 0 11px 0; vertical-align:top; border-bottom:1px solid #F3E5EB; color:#2E2E38">Removes the duplicated fuzzy match and the class of wrong-president bugs it produces.</td></tr>
+  </tbody>
+</table>
+
+<div style="background:#FDF8FA; border:1px solid #F3E5EB; border-radius:16px; box-shadow:0 4px 15px rgba(216,27,96,0.04); padding:18px 20px; margin:0 0 36px; break-inside:avoid">
+  <p style="margin:0 0 10px; font-size:12px; letter-spacing:1px; text-transform:uppercase; color:#71717A">States this page needs designed, not just a happy path</p>
+  <p style="margin:0 0 9px; color:#2E2E38"><strong style="font-weight:700; color:#1E1E24">Loading.</strong> Reserve the map's box with <code>aspect-ratio</code> and paint a flat skeleton inside it — the district outline in <code>--border-light</code>, pins as plain dots at their real positions. Layout is final before a single tile arrives, so there is no shift, and the shape of the answer is visible immediately.</p>
+  <p style="margin:0 0 9px; color:#2E2E38"><strong style="font-weight:700; color:#1E1E24">Tile failure.</strong> If the layer errors, keep the pins and swap the map for the club list. The page's value is the clubs and their contacts, not the imagery — it should degrade to a directory, not to an empty grey box.</p>
+  <p style="margin:0; color:#2E2E38"><strong style="font-weight:700; color:#1E1E24">Empty filter.</strong> Keep the map framed on the selected zone, name the zone, say it has no clubs listed yet, and offer a single clear-filter action. Never an empty map with no explanation.</p>
+</div>
+
+<h2 style="font-family:'Montserrat',sans-serif; font-weight:800; font-size:23px; letter-spacing:-0.2px; margin:0 0 6px">3. Showcase</h2>
+<p style="margin:0 0 16px; color:#2E2E38">What exists today is <code>ClubInitiativesList.jsx</code> inside <code>/directory</code>: a search field, a zone dropdown, and a list of clubs with their initiatives nested underneath. Four things about it shouldn't carry forward.</p>
+<ul style="margin:0 0 22px; padding-left:20px; color:#4A4A5A">
+  <li style="margin-bottom:6px">It's keyed by club, not by project. To see any work you must first decide which club to look at — the opposite of a showcase, which should let the work argue for itself.</li>
+  <li style="margin-bottom:6px">The section's subtitle spends fifteen words on process: "Manually curated flagship community service initiatives selected by Club Presidents &amp; District Officers." Nobody arrives wanting to know the curation method.</li>
+  <li style="margin-bottom:6px">Filters are search and zone only. The brief needs club, zone and category/avenue.</li>
+  <li style="margin-bottom:6px">"+ Add Featured Initiative" renders unconditionally, so every public visitor sees a button they can't use.</li>
+</ul>
+
+<h3 style="font-family:'Montserrat',sans-serif; font-weight:700; font-size:17px; margin:26px 0 10px">Specification</h3>
+<div style="display:grid; gap:13px; margin:0 0 22px">
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">Card</p>
+    <p style="margin:0; color:#4A4A5A">A 4:3 image with the box reserved by <code>aspect-ratio</code> and <code>loading="lazy" decoding="async"</code>; then club name, date, one category tag, and the summary clamped to four lines with <code>-webkit-line-clamp</code>. Fix the text block's height so a three-line summary and a one-line summary produce the same card — a ragged grid reads as broken data.</p>
+  </div>
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">Grid — not masonry</p>
+    <p style="margin:0; color:#4A4A5A"><code>grid-template-columns: repeat(auto-fill, minmax(300px, 1fr))</code>. Masonry either needs <code>grid-template-rows: masonry</code>, which isn't broadly shipped, or JavaScript measurement that re-flows on every filter change — precisely the pattern causing the complaints elsewhere. With a fixed card height there's nothing for masonry to do anyway.</p>
+  </div>
+  <div style="border-left:3px solid #D81B60; padding:2px 0 2px 16px; break-inside:avoid">
+    <p style="margin:0 0 5px; font-weight:700; color:#1E1E24">Filter bar</p>
+    <p style="margin:0; color:#4A4A5A">Three selects — club, zone, category — plus a clear-all that only appears once something is set. Filter in memory against data already fetched, and toggle visibility on the existing nodes rather than remounting the grid, so filtering never re-requests an image that was already on screen.</p>
+  </div>
+</div>
+
+<div style="background:#FDF8FA; border:1px solid #F3E5EB; border-radius:16px; box-shadow:0 4px 15px rgba(216,27,96,0.04); padding:18px 20px; margin:0 0 22px; break-inside:avoid">
+  <p style="margin:0 0 10px; font-size:12px; letter-spacing:1px; text-transform:uppercase; color:#71717A">Loading, empty, detail</p>
+  <p style="margin:0 0 9px; color:#2E2E38"><strong style="font-weight:700; color:#1E1E24">Loading.</strong> Eight skeleton cards at the card's exact dimensions, so the grid never reflows when real data lands.</p>
+  <p style="margin:0 0 9px; color:#2E2E38"><strong style="font-weight:700; color:#1E1E24">No matches.</strong> State the filters currently applied and offer clear-all. A bare "no results" makes the user guess which of three filters is the culprit.</p>
+  <p style="margin:0 0 9px; color:#2E2E38"><strong style="font-weight:700; color:#1E1E24">A club with no projects yet.</strong> This is where the tagline actually earns its place rather than being decoration: "It all starts with Rotaract and everything good happens." followed by the plain fact that this club hasn't added a project, and — for a signed-in president only — the link to add one.</p>
+  <p style="margin:0; color:#2E2E38"><strong style="font-weight:700; color:#1E1E24">Detail page.</strong> <code>/showcase/[project-id]</code>: photos, the full write-up, club attribution linking through to that club's leadership page, and three related projects by category. Without this route the four-line summary is the entire story, which wastes the submissions you already have.</p>
+</div>
+
+<h2 style="font-family:'Montserrat',sans-serif; font-weight:800; font-size:23px; letter-spacing:-0.2px; margin:36px 0 6px">Three things I need from you</h2>
+<ol style="margin:0 0 24px; padding-left:20px; color:#2E2E38">
+  <li style="margin-bottom:9px">Every flagship project on the homepage currently pairs an Unsplash stock photo with a specific claim — 12,500+ units, 66,000 saplings, 20,000+ children screened. Stock imagery under precise numbers is the site's biggest credibility problem and no amount of refinement touches it. Are real event photographs available?</li>
+  <li style="margin-bottom:9px">Club-submitted showcase projects sit behind a P1 approval gate that the call flagged as risky. Should the showcase be designed assuming submissions exist at launch, or seed-only from the July–August MDIO form data?</li>
+  <li style="margin-bottom:9px">The four project sections ship as separate deployments but must share header, footer and component library. With no shared package today that means either copying the components into four repos, where they will drift within weeks, or extracting one shared package first. Which?</li>
+</ol>
+
+<p style="margin:0; color:#71717A; font-size:13.5px">Unless you redirect me, part two takes <code>/initiatives</code> — the dashboard-of-dashboards, where "alive but not heavy" matters most — then <code>/portal/reports/new</code>, then Career Bridge.</p>
+
+</div></doc-page>
+</x-dc>
+</body>
+</html>
