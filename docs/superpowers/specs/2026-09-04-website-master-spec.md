@@ -43,6 +43,21 @@ presentation on the 6th is just the first checkpoint, not the finish line.
   single monorepo): a NestJS + TypeScript + Prisma API, and a Vite + React +
   TypeScript + Tailwind web frontend. Reason: a mobile app is planned for the
   future, so the frontend cannot be the only client of the data layer.
+- **The web frontend is one codebase, one deployment** serving
+  `rotaract3011.org` and all five project subdomains — hostname-based
+  rendering picks the right experience, not five separate apps. One Dokploy
+  app, one build pipeline, five extra domains/DNS/certs pointed at it. This
+  doesn't conflict with the two-repo split above — API and web are still
+  separate repos/deployments; "one deployment" refers only to the web side
+  not being fragmented across subdomains.
+- **Cross-subdomain session**: cookie scoped to `Domain=.rotaract3011.org`,
+  issued by the API (at its own host, e.g. `api.rotaract3011.org`),
+  `SameSite=Lax` + `Secure`. Every subdomain's frontend calls the same API
+  origin.
+- **No server-owned object storage.** Public assets (photos, showcase
+  images, certificates) are referenced by external URL (Drive/Photos or
+  wherever already hosted) and only cached at the edge, never uploaded to a
+  bucket we manage.
 - **Layered backend architecture**, matching the pattern used in
   `house-of-urve` and `racddl`: `app`/routes (thin) → `controllers` → `services`
   → `repositories` (data access), with `transformers` doing doc⇄DTO mapping
@@ -55,7 +70,9 @@ presentation on the 6th is just the first checkpoint, not the finish line.
   Convert `.jsx` → `.tsx`, inline styles → Tailwind, page by page.
 - **Styling:** Tailwind, matching the design-system-refinement approach in
   `docs/claude-design-prompt.md` — snappy over decorative, no scroll-jacking,
-  reuse existing tokens rather than inventing new ones.
+  reuse existing tokens rather than inventing new ones. Accessibility
+  (baseline WCAG), SEO (metadata/OG tags, sitemap.xml on public pages), and
+  mobile-first layout are explicit requirements, not implied — see §6.R.
 
 ## 4. Sitemap
 
@@ -296,6 +313,33 @@ points aren't shown across clubs. Built entirely from data already collected
 elsewhere (attendance, contributions, membership anniversary) — no new
 tracking infrastructure.
 
+### L-R. Cross-cutting requirements (added 2026-09-04, from critique review)
+
+- **L. Live visitor counter** — explicit in the original call, restored
+  after being dropped during compilation. Simple server-incremented counter,
+  no third-party analytics mandate.
+- **M. Email delivery** — provider-agnostic sending layer rotating across
+  Resend (100/day), Mailgun (100/day), Gmail SMTP (500/day) for ~700/day
+  combined free-tier capacity, with failover. One `sendEmail()` service, not
+  provider calls scattered through the codebase.
+- **N. Push notifications** — Web Push API (service worker + VAPID),
+  desktop + mobile browser. Not native app push (no FCM/APNs) — that's a
+  future item once a real mobile app exists. Shares one dispatch service
+  with email (§M) rather than being a parallel system.
+- **O. Deployment topology** — one web codebase/deployment for main site +
+  all 5 subdomains (see §3).
+- **P. Cross-subdomain auth** — `Domain=.rotaract3011.org` session cookie
+  (see §3).
+- **Q. Backup for the new Postgres** — acknowledged gap, explicitly
+  deferred, not blocking.
+- **R. Non-functional: accessibility, SEO, mobile-first** — explicit
+  requirements applied throughout every phase's frontend work, not a
+  separate build phase (see §3, §7).
+
+Full detail for all of these is in
+`docs/superpowers/specs/2026-09-04-admin-portal-cms-rbac-design.md`
+(sections L-R), same as A-K.
+
 ## 7. Design direction
 
 Full brief in `docs/claude-design-prompt.md`. Summary: this is a refinement
@@ -309,19 +353,30 @@ the data genuinely needs it.
 
 ## 8. Build order
 
-1. RBAC (§6.A) — foundational
-2. CMS (§6.B) + Settings (§6.E) — parallel, once RBAC exists
-3. Report schema (§6.C) — before point rules
-4. Point rules (§6.D) — depends on C; `club_facts` half independent
-5. Effort tracker (§6.F) + RIDE (§6.G) — independent of each other
-6. Member accounts (§6.H) — depends on RBAC's multi-role model; build early,
-   since I/J/K all depend on it
-7. Personal dashboard (§6.I) — depends on H
-8. Directory (§6.J) — depends on H
-9. Gamification (§6.K) — depends on H, I; most deferrable if timeline pressure hits
-10. The 5 project-subdomain operational tools (Mission 3011, Drishti, RCL,
+1. **Deployment topology (§6.O) + cross-subdomain auth (§6.P)** — decided
+   before any subdomain work starts, since they determine how login/routing
+   work everywhere else
+2. RBAC (§6.A) — foundational
+3. CMS (§6.B) + Settings (§6.E) — parallel, once RBAC exists
+4. Report schema (§6.C) — before point rules
+5. Point rules (§6.D), including period handling and audit log — depends on
+   C; `club_facts` half independent
+6. Effort tracker (§6.F) + RIDE (§6.G) — independent of each other
+7. Member accounts (§6.H), including dedup handling — depends on RBAC's
+   multi-role model; build early, since I/J/K all depend on it
+8. Personal dashboard (§6.I) — depends on H
+9. Directory (§6.J) — depends on H
+10. Gamification (§6.K) — depends on H, I; most deferrable if timeline
+    pressure hits
+11. **Email + push notification dispatch (§6.M, §6.N)** — build together,
+    needed wherever C/F/G/H trigger a notification
+12. The 5 project-subdomain operational tools (Mission 3011, Drishti, RCL,
     Career Bridge, RIDE) — schemas can be designed now, populated once CLS
     bidding assigns lead clubs
+13. **Visitor counter (§6.L)** and **DB backup (§6.Q)** — no dependencies,
+    slot in whenever; Q is explicitly non-blocking
+14. **Accessibility/SEO/mobile-first (§6.R)** — not a phase, a standard
+    applied throughout every other phase's frontend work
 
 ## 9. Explicit non-goals
 
@@ -331,6 +386,10 @@ the data genuinely needs it.
 - Automated/algorithmic *subjective* scoring — quality judgments stay manual
 - Raw LLM chatbot for the "AI/innovation" SERIC requirement — ruled out as
   unreliable/costly for a free-tier build; concept still undecided
+- Native mobile app push (FCM/APNs) — browser push only for now (§6.N)
+- A structured appeal/dispute UI for point scores — audit log only for now
+  (§6.D)
+- Effective-dated role transitions — acknowledged gap, deferred (§6.H)
 
 ## 10. Source documents
 
