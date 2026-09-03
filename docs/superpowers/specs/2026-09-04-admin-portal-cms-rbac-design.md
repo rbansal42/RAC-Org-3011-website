@@ -39,29 +39,55 @@ system:
   `showcase:publish`, `content:edit`, `announcements:send`,
   `users:manage`, `roles:manage`)
 - `role_permissions` — join table
-- **`user_roles`** — `user_id`, `role_id`, `scope_type` (`null | club | project`),
-  `scope_id` (nullable — a `club_id` or a project subdomain key). **Revised
-  2026-09-04: a user can hold multiple roles simultaneously** (e.g. Member of
-  their own club + President of that same club + DSC/Admin), so this replaces
-  the originally-planned single `user_profiles.role_id` column entirely. A
+- **`user_roles`** — `user_id`, `role_id`, `scope_type`
+  (`null | club | zone | project`), `scope_id` (nullable — a `club_id`,
+  `zone` value, or a project subdomain key). **Revised 2026-09-04: a user
+  can hold multiple roles simultaneously** (e.g. Member of their own club +
+  President of that same club + DSC/Admin), so this replaces the
+  originally-planned single `user_profiles.role_id` column entirely. A
   user's effective permission set is the **union** across every role they
-  hold. Scoped roles (President scoped to one club, or a project subdomain's
-  Admin scoped to that project) only grant their permissions within that
-  scope — global roles (Super Admin, Member) have `scope_type: null`.
-  Project-subdomain admin (Section G and the other four subdomains) is just
-  another scoped role under this same model, not a separate auth system.
+  hold. Scoped roles (President scoped to one club, ZRR scoped to one zone,
+  a project subdomain's Admin scoped to that project) only grant their
+  permissions within that scope — global roles (Super Admin, Member) have
+  `scope_type: null`. Project-subdomain admin (Section G and the other four
+  subdomains) is just another scoped role under this same model, not a
+  separate auth system.
 
-Seed system roles: Member, President, Secretary, DSC/Admin, Super Admin — but
-Super Admin can create new roles and edit permission grants through the UI.
-This is what makes it configurable rather than another hardcoded set.
+**Org-tree hierarchy (included 2026-09-04 — previously listed as a
+non-goal, now in scope):** the full hierarchy discussed on the planning
+call — Super Admin (DRR) → Deputy DRR / DSC roles → ZRR (zone-scoped) →
+President/Secretary (club-scoped) — is built on the same `scope_type`/
+`scope_id` mechanism, not a separate system:
+- `zone` becomes a real `scope_type` value, matching `clubs.zone` (already
+  exists — 75 clubs are already tagged with a zone from the Supabase
+  migration)
+- A ZRR role holder (`scope_type: zone`, `scope_id: <zone>`) sees/manages
+  only clubs within their assigned zone — reports, showcase submissions,
+  point data scoped to that zone
+- DSC/Deputy DRR roles are unscoped (`scope_type: null`) — full
+  district-wide visibility, same as Super Admin but without role/permission
+  management rights unless explicitly granted
+- **Visibility still nests the same way permissions do**: a club-scoped
+  President sees only their club; a zone-scoped ZRR sees every club in
+  their zone; an unscoped DSC/Super Admin sees everything. This is a
+  natural extension of the existing scope model, not new infrastructure —
+  what changes is that `zone` joins `club`/`project` as a valid
+  `scope_type`, and zone-level roles get seeded.
+
+Seed system roles: Member, President, Secretary, ZRR, DSC/Admin, Super
+Admin — but Super Admin can create new roles and edit permission grants
+through the UI. This is what makes it configurable rather than another
+hardcoded set.
 
 **Enforcement:**
 - Every API mutation endpoint has a guard/decorator checking the caller's
-  role has the required permission. Non-negotiable — this is the actual
-  security boundary.
-- Frontend fetches the current user's resolved permission set once at login,
-  uses it to conditionally render nav items, buttons, form fields. Pure UX,
-  never trusted as a boundary.
+  role has the required permission **and** that the target resource falls
+  within the caller's scope (club/zone/project match, or the caller holds
+  an unscoped role). Non-negotiable — this is the actual security boundary.
+- Frontend fetches the current user's resolved permission set (including
+  scope) once at login, uses it to conditionally render nav items, buttons,
+  form fields, and to pre-filter list views (e.g. a ZRR's dashboard only
+  requests their zone's data). Pure UX, never trusted as a boundary.
 
 ---
 
@@ -194,19 +220,33 @@ RIDE itself isn't one of the four bid-out projects — it's a recurring
 district program.
 
 - `/support-club` — clubs register once as a district-wide "Support Club"
-  for RIDE (not tied to a specific delegation)
+  for RIDE (not tied to a specific delegation). **Revised 2026-09-04:
+  registration captures real capacity upfront**, not just an opt-in flag —
+  number of delegates they can host, homestay availability, preferred
+  months. `ride_support_clubs` (`club_id`, `capacity_delegates`,
+  `homestay_available`, `preferred_months`, `registered_at`).
 - `/incoming` — incoming RIDE delegations (visiting district, dates,
-  contact); **host clubs are assigned per delegation from the pool of
-  registered support clubs**, not registered directly as "host"
+  contact). `ride_delegations` (`id`, `visiting_district`, `start_date`,
+  `end_date`, `contact`, `status`).
+- **Host assignment: district admin assigns manually** from the pool of
+  registered Support Clubs — not self-service, not automatic matching.
+  **Multiple host clubs can split a single delegation** (matches the points
+  document's per-day/per-member granularity — different clubs can host
+  different days or different delegates of the same visiting team).
+  `ride_delegation_hosts` (`delegation_id`, `club_id`, `assigned_by`,
+  `days_hosted`, `members_sent`) — join table, one row per
+  delegation×host-club pairing, not a single FK on `ride_delegations`.
 - `/gallery` — media from the past 2 RIDEs (7-8 photos, 1-2 videos)
 - `/admin` — manage incoming delegations, review support-club sign-ups,
-  assign host clubs per delegation
+  assign host clubs per delegation (supports assigning multiple clubs to one
+  delegation)
 
 **Points integration:** support-club participation and delegation
 hosting/visiting feed the existing RIDE point rules from the official points
 document (International Services category: hosting 40/day, visiting 30/day,
 sending member 30/member, +50 for both) — these are `point_rules` entries
-with `source: club_fact:<key>` (Section D), auto-computed, not manual.
+sourced from `ride_delegation_hosts` (`days_hosted`, `members_sent`),
+auto-computed per host-club row, not manual.
 
 **Sister Club form is explicitly separate from RIDE** (easy to conflate,
 both fall under International Services) — it lives on the main site at

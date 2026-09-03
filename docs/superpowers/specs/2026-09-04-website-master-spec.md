@@ -183,15 +183,22 @@ This section was previously its own spec
 A-K) and is summarized here; **that file remains the authoritative detail**
 for schema fields and reasoning.
 
-### A. RBAC — multi-role, scoped
+### A. RBAC — multi-role, scoped, full org-tree hierarchy
 
 `user_roles` (`user_id`, `role_id`, `scope_type`, `scope_id`) — **a user can
 hold multiple roles simultaneously** (e.g. Member of their own club +
 President of that club + DSC/Admin). Effective permissions are the union of
-every role held. Scoped roles (President scoped to a club, project-subdomain
-Admin scoped to that project) only grant permissions within scope; global
-roles (Super Admin, Member) are unscoped. Seed roles: Member, President,
-Secretary, DSC/Admin, Super Admin — Super Admin can create new roles via UI.
+every role held. Scoped roles (President scoped to a club, ZRR scoped to a
+zone, project-subdomain Admin scoped to that project) only grant permissions
+within scope; global roles (Super Admin, DSC/Deputy DRR, Member) are
+unscoped. Seed roles: Member, President, Secretary, ZRR, DSC/Admin, Super
+Admin — Super Admin can create new roles via UI.
+
+**Full org-tree hierarchy is in scope** (revised 2026-09-04 — previously a
+non-goal): Super Admin (DRR) → Deputy DRR/DSC → ZRR (zone-scoped) →
+President/Secretary (club-scoped), built on `zone` joining `club`/`project`
+as a `scope_type` rather than as separate infrastructure. A ZRR sees/manages
+only their zone's clubs; visibility nests the same way permission grants do.
 **Backend enforces every mutation server-side; frontend only uses
 permissions for conditional rendering, never as the security boundary.**
 
@@ -245,11 +252,17 @@ content-block, not a standing public list.
 ### G. RIDE subdomain
 
 `ride.rotaract3011.org` — Support Club registration is district-wide, not
-per-delegation; host clubs get assigned per incoming delegation from that
-pool. Points auto-compute via `point_rules`/`club_facts` (hosting 40/day,
-visiting 30/day, sending member 30/member, +50 for both — per the points
-document). **Sister Club form is explicitly separate**, lives at
-`/resources/sister-club` on the main site, not on this subdomain.
+per-delegation, and **captures real capacity upfront** (delegate capacity,
+homestay availability, preferred months), not just an opt-in flag. **District
+admin manually assigns host clubs per delegation** from the registered pool
+— not self-service, not automatic matching — and **a single delegation can
+be split across multiple host clubs** (`ride_delegation_hosts` join table:
+delegation × host club × days hosted × members sent), matching the points
+document's per-day/per-member scoring granularity. Points auto-compute via
+`point_rules` sourced from that join table (hosting 40/day, visiting 30/day,
+sending member 30/member, +50 for both — per the points document). **Sister
+Club form is explicitly separate**, lives at `/resources/sister-club` on the
+main site, not on this subdomain.
 
 ### H. Member accounts — portal opened to all members
 
@@ -318,9 +331,6 @@ the data genuinely needs it.
 - Automated/algorithmic *subjective* scoring — quality judgments stay manual
 - Raw LLM chatbot for the "AI/innovation" SERIC requirement — ruled out as
   unreliable/costly for a free-tier build; concept still undecided
-- A full org-tree RBAC with ZRR-level scoping — vision item, not in this
-  build (the multi-role/scoped model in §6.A can accommodate it later
-  without a rearchitecture, but it isn't being built now)
 
 ## 10. Source documents
 
