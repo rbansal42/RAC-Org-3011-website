@@ -249,7 +249,18 @@ hold `President, scope: same club` etc.
   the point rule share the same underlying fact).
 - **My club** — read-only view of own club's roster, projects, reports,
   announcements (member-level `scope: own club` permissions — no edit
-  rights, that stays with President/Secretary/DSC roles).
+  rights, that stays with President/Secretary/DSC roles) — **except Showcase
+  submission (see below), which is deliberately opened to members.**
+- **Submit Showcase entries** — **revised 2026-09-04:** any member (not just
+  President/Secretary) can submit a project to `/showcase`, club-scoped
+  `showcase:submit` permission granted to the base Member role. Deliberate:
+  the club's avenue Directors (Community Service, Club Service, etc. — see
+  `docs/data-requirements.md`) did the actual project work and should be the
+  ones reporting it, not routed through the President/Secretary as a
+  bottleneck. Publishing still requires officer/DSC approval
+  (`showcase:publish` stays a higher-privilege permission, unchanged from
+  Section B/D's existing approval-queue design) — this only changes who can
+  *submit*, not who can *publish*.
 - **Personalized announcement feed** — extends the existing
   `announcements.target_audience` targeting down to individual members, not
   just officer-level roles.
