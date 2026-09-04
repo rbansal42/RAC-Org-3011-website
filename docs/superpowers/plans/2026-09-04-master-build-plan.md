@@ -1,5 +1,7 @@
 # RAC District 3011 Website — Master Build Plan
 
+> **Status (2026-09-04): superseded where it differs.** `docs/superpowers/specs/2026-09-04-implementation-spec.md` is the authoritative document for schema, routes, RBAC, storage and email. This file remains useful as extra task-level detail for its build step; when the two disagree, the spec wins.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement each phase plan task-by-task. This master plan defines architecture, schema, interfaces and phase order; each phase has its own detailed plan file (`2026-09-04-phase-NN-*.md`) with TDD steps.
 
 **Goal:** Build the complete Rotaract District 3011 platform (public site, member/officer portal, admin, five project subdomains) as two greenfield repositories, with every feature in the master spec implemented to production quality. No time constraint; completeness and correctness over speed.
