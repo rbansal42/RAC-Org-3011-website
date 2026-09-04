@@ -865,6 +865,16 @@ Each cached endpoint declares its tags with a `@CacheTags(...)` decorator; the i
 3. e2e: an authenticated route never returns a `Cache-Tag` header and always returns `private, no-store`.
 4. Live check after deploy: `cf-cache-status` must be `HIT` on a second request to `/public/home`, and p50 for that endpoint from India must be under 100 ms (it is ~400 ms today).
 
+### 14.7b Cloudflare Browser Cache TTL overrides the origin (found and fixed 2026-09-05)
+
+Cloudflare's Free plan defaults **Browser Cache TTL to 4 hours** and *rewrites* the origin's `max-age` on the way out. Verified live: origin sent `public, max-age=60, s-maxage=600, stale-while-revalidate=86400`; the browser received `max-age=14400`.
+
+This silently breaks the §14.4 invalidation guarantee - purging Cloudflare's edge cannot reach a browser cache, so a visitor who already loaded a page would serve stale content for up to 4 hours after an update.
+
+Fix (applied, scoped): the cache rule now sets `browser_ttl.mode = "respect_origin"` alongside `edge_ttl.mode = "respect_origin"`. Verified after the change: browsers receive `max-age=60`, `/public/live` receives `max-age=5`, edge still `HIT`, and cookie-bearing requests still `DYNAMIC`. Worst-case post-purge browser staleness is now 60 s, not 4 h.
+
+**Do not fix this with the zone-wide `browser_cache_ttl` setting** - that would change behaviour for every hostname in the zone, including the Vercel-hosted production apex. Keep it on the rule.
+
 ### 14.8 Origin path: Cloudflare Tunnel (decided 2026-09-05)
 
 Diagnosis (measured from Delhi): Cloudflare serves this zone from **Singapore** (`cf-ray: …-SIN`; the free plan gets no India PoP), while the origin sits ~30 ms away in India. Requests therefore detour Delhi → Singapore → India → Singapore → Delhi. Cold request 520-580 ms, warm-connection request 141 ms, direct-to-origin 135 ms, origin app time ~30 ms. **~380 ms of the cold cost is TCP+TLS setup, not transfer.**
