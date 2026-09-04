@@ -1,5 +1,7 @@
 # Phase 02: Public Site Implementation Plan
 
+> **Status (2026-09-04): superseded where it differs.** `docs/superpowers/specs/2026-09-04-implementation-spec.md` is the authoritative document for schema, routes, RBAC, storage and email. This file remains useful as extra task-level detail for its build step; when the two disagree, the spec wins.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship every public screen of rotaract3011.org (25 mockup screens, 3 breakpoints each) on real data: a `public` API module with cache-headered read endpoints plus enquiry/visit writes, and the matching React routes, header, footer and shared public components.
