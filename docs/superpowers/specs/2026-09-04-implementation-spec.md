@@ -1,4 +1,4 @@
-# RAC District 3011 Platform — Implementation Spec (hand-off edition)
+# RAC District 3011 Platform: Implementation Spec (hand-off edition)
 
 This document is written to be executed by an implementer with no prior context and a low reasoning budget. Follow it literally. Where it says "exactly", do not improvise. Where a decision is not covered here, choose the simplest option that keeps every test in §12 passing, and write the decision down in `docs/decisions.md` of the repo you are in.
 
@@ -91,7 +91,7 @@ async function bootstrap() {
 }
 bootstrap();
 ```
-`src/config/env.ts` parses `process.env` with a Zod schema (§11.2) and exits on failure. When `WORKER=1`, `AppModule` imports only `PrismaModule`, `NotificationsModule` (worker side), `LinkHealthModule`, `PointsModule` (recompute worker) and `DrrCalendarModule` (reminders) — controllers are not mounted.
+`src/config/env.ts` parses `process.env` with a Zod schema (§11.2) and exits on failure. When `WORKER=1`, `AppModule` imports only `PrismaModule`, `NotificationsModule` (worker side), `LinkHealthModule`, `PointsModule` (recompute worker) and `DrrCalendarModule` (reminders): controllers are not mounted.
 
 ### 1.2 `rac3011-web`
 
@@ -277,7 +277,7 @@ model PointRuleTier { id; ruleId String @map("rule_id"); min Decimal @db.Decimal
 enum EntryKind { computed judged }
 model ClubPointEntry { id; clubId String @map("club_id"); ryYear Int @map("ry_year"); periodKey String @map("period_key")  /* "2026-08" | "2026" | "once" */; ruleId String? @map("rule_id"); categoryId String @map("category_id"); kind EntryKind; points Decimal @db.Decimal(10,2); reason String?; traceJson Json? @map("trace_json"); sourceType String? @map("source_type"); sourceId String? @map("source_id"); createdById String? @map("created_by_id"); createdAt/updatedAt; @@unique([clubId, ruleId, periodKey], map: "club_point_entries_computed_idempotent"); @@index([clubId, ryYear]); @@map("club_point_entries") }
 ```
-Note: the unique index above must be a partial index `WHERE kind='computed'` — Prisma cannot express it, so add it by hand in the migration SQL and remove the generated non-partial one.
+Note: the unique index above must be a partial index `WHERE kind='computed'`: Prisma cannot express it, so add it by hand in the migration SQL and remove the generated non-partial one.
 
 ### 3.7 Showcase, effort, badges, certificates
 
@@ -462,7 +462,7 @@ Conventions: JSON; ids in paths; list endpoints accept `?page=1&pageSize=25` and
 
 ### 5.5 Content & settings
 `GET /content/blocks?pageKey=` (content:edit) → drafts + published; `PUT /content/blocks/:pageKey/:sectionKey` `{ type, value }` (content:edit; image/link values are link-checked synchronously, response includes `linkStatus`); `POST /content/blocks/:pageKey/:sectionKey/publish` (content:publish; audited); `GET /settings` (settings:manage), `PUT /settings/:key` (settings:manage; audited; validated per key by `SettingsSchema` §8.3; setting `subdomain.<key>.leadClubId` grants `project_admin` scoped to that project to that club's president/secretary user_roles and revokes it from the previous lead club).
-Admin CRUD (public_content:manage, audited on write): `/admin/achievements`, `/admin/partners`, `/admin/publications`, `/admin/resources`, `/admin/past-drrs`, `/admin/district-team` — each `GET`, `POST`, `PATCH /:id`, `DELETE /:id`, plus `POST /admin/<x>/reorder { ids[] }`. `GET /admin/link-health?status=` , `POST /admin/link-health/:id/recheck`.
+Admin CRUD (public_content:manage, audited on write): `/admin/achievements`, `/admin/partners`, `/admin/publications`, `/admin/resources`, `/admin/past-drrs`, `/admin/district-team`: each `GET`, `POST`, `PATCH /:id`, `DELETE /:id`, plus `POST /admin/<x>/reorder { ids[] }`. `GET /admin/link-health?status=` , `POST /admin/link-health/:id/recheck`.
 
 ### 5.6 Reports (`/reports`)
 - `GET /reports/schema/active`, `GET /reports/schema` (requests:manage), `POST /reports/schema/draft` (clone active → new draft version), `PUT /reports/schema/:version/fields { fields[] }` (draft only), `POST /reports/schema/:version/publish` (sets active, retires previous; audited)
@@ -492,7 +492,7 @@ Admin CRUD (public_content:manage, audited on write): `/admin/achievements`, `/a
 ### 5.12 DRR calendar admin (drr_calendar:manage)
 `GET /drr-calendar/bookings?status=`, `POST /drr-calendar/bookings/:id/confirm`, `POST /drr-calendar/bookings/:id/decline { reason }`, `POST /drr-calendar/blocks`, `DELETE /drr-calendar/blocks/:id`, `GET /drr-calendar/status` (Google reachability).
 
-### 5.13 Subdomain admin routes — see §10.
+### 5.13 Subdomain admin routes: see §10.
 
 ---
 
@@ -514,7 +514,7 @@ type Trace = { ruleId: string; ruleKey: string; label: string; categoryKey: stri
 
 `PointsEngine.recompute({ clubId, ryYear, month?, trigger })` inside one transaction:
 1. Load active rules for `ryYear`.
-2. For each rule, ask the adapter for `sourceType` to produce inputs: `adapter.inputs({ clubId, ryYear, month, rule })` returning `{ periodKey, input }[]` (monthly rules: one per month in scope — the given month, or all months July..current when `month` omitted; yearly: one with `periodKey = String(ryYear)`; once: one with `periodKey = 'once'`).
+2. For each rule, ask the adapter for `sourceType` to produce inputs: `adapter.inputs({ clubId, ryYear, month, rule })` returning `{ periodKey, input }[]` (monthly rules: one per month in scope: the given month, or all months July..current when `month` omitted; yearly: one with `periodKey = String(ryYear)`; once: one with `periodKey = 'once'`).
 3. For each (rule, periodKey): evaluate; upsert `club_point_entries` computed row by `(clubId, ruleId, periodKey)` with points + trace; delete the row when evaluation is null.
 4. Delete computed rows for this club/ryYear whose rule is inactive or deleted.
 5. Emit `points.recomputed {clubId, ryYear}`.
@@ -550,7 +550,7 @@ Providers in order: `resend` (cap env `RESEND_DAILY_CAP` default 100), `mailgun`
 Badges seeded: `first_project` (showcase published where submitter), `events_10`, `events_25` (checkins count), `hours_25`, `hours_100` (approved effort hours), `service_1y`, `service_3y` (membershipAnniversary), `phf` (club_facts increments cannot attribute; instead a manual `POST /members/:id/badges/phf` by dsc). Evaluate on events `showcase.published`, `checkin.created`, `effort.approved`, nightly `badges.anniversaries`. Certificates issued automatically for `service_1y/3y`, `hours_100`; PDF via pdfkit: A4 landscape, Montserrat (bundle TTF in `assets/fonts`), pink `#D81B60` rule line, district logo top-left (`assets/district-logo.jpg`), name 36pt, title 18pt, issued date, reference id, signature line "District Rotaract Representative".
 
 ### 6.8 Legacy report compatibility
-`sections_json` from schema version 1 has keys `clubMeetings, clubServices, communityServices, internationalServices, vocationalServices, districtProjects`, each an array of activity objects (`eventName, date, venue, areaOfFocus, clubStrength, initiatedBy, ...`). Seed `report_form_schemas` version 1 as `retired` with one `textarea` field per legacy section (fieldKey = legacy key) so history renders. Version 2 (active) fields, in order, section "Monthly activity log": `activities` (type `list` of activity rows is NOT a field type — instead model the monthly report as repeated activity rows: fields below apply per activity, and `values.activities` is an array of objects validated against these fields):
+`sections_json` from schema version 1 has keys `clubMeetings, clubServices, communityServices, internationalServices, vocationalServices, districtProjects`, each an array of activity objects (`eventName, date, venue, areaOfFocus, clubStrength, initiatedBy, ...`). Seed `report_form_schemas` version 1 as `retired` with one `textarea` field per legacy section (fieldKey = legacy key) so history renders. Version 2 (active) fields, in order, section "Monthly activity log": `activities` (type `list` of activity rows is NOT a field type: instead model the monthly report as repeated activity rows: fields below apply per activity, and `values.activities` is an array of objects validated against these fields):
 `activity_title text required`, `activity_date date required`, `avenue select required [community, club, international, vocational, district, flagship]`, `area_of_focus select required [7 Rotary areas]`, `initiated_by select required [rotaract, rotary, other]`, `people_reached number`, `members_participated number required`, `collaborating_clubs clubs`, `is_physical boolean`, `photo_links link (multiple)`, `showcase_summary textarea`. Section "Club": `physical_meetings number required (pointSourceKey physical_meetings)`, `virtual_meetings number`, `new_members_inducted number (new_members)`, `members_left number`, `social_posts number (social_posts)`. Section "Notes": `notes textarea`. `report_field` adapter derives: `camps_organised` = activities with avenue community and title/area matching health/blood/polio, `projects_initiated` = activities with initiated_by rotaract, `vocational_workshops` = activities with avenue vocational, `flagship_continued` = any activity with avenue flagship, `international_activities` = avenue international, `max_collaborators` = max collaborating_clubs length. Implement these derivations in `src/points/adapters/report-field.derive.ts` with unit tests.
 
 ---
@@ -568,7 +568,7 @@ Template keys and triggers: `otp` (auth), `member-registered` (→ club presiden
 
 ---
 
-## 8. Seed data (`prisma/seed-system.ts` — idempotent upserts)
+## 8. Seed data (`prisma/seed-system.ts`: idempotent upserts)
 
 8.1 Permissions (§4.3), roles (§4.4), zones (from distinct clubs.zone), `clubs.slug` = slugify(name), `clubs.zoneId`.
 8.2 Point categories (order): community_services "Community Services", vocational_services "Vocational Services / Professional Development", international_services "International Services", club_services "Club Services", flagship "Flagship Projects", club_district "Club & District", reporting "Reporting to District", drr_visit "DRR Official Visit", membership "Membership Growth & Retention", rotary_international "Rotary International", public_image "Public Image", dues "District Dues", mdio "MDIOs Presence", judged "Officer judgement".
@@ -606,15 +606,15 @@ Template keys and triggers: `otp` (auth), `member-registered` (→ club presiden
 (The exact figures come from the official "Points System 2026-27" PDF held by Rahul; the `point_rules` admin screen lets the DRR correct any value after seeding. Where the PDF is available to the implementer, prefer its numbers and update this list.)
 8.4 Settings defaults: `report.deadlineDay` 5; `compliance.thresholdMonths` 2; `feedback.allowAnonymous` false; `drr.*` per §6.3 (workingDays [1,2,3,4,5,6], dayStart "10:00", dayEnd "19:00", slotMinutes 60, bufferMinutes 30, monthsAhead 9, blackoutDates []); `subdomain.<key>.active` false and `.leadClubId` null for all five; `enquiry_routing` `{ new_club: {name:'', email:''}, sponsor: {...}, contact: {...} }`; `rcl.pointsWin` 2, `rcl.pointsTie` 1, `rcl.season` 2026; `careerbridge.expiryDays` 45; `home.stats` `{ zones: 4, focusAreas: 7, foundedYear: 1968, ageRange: '18–30' }`.
 8.5 Content blocks (draft = published, so pages render): page `home` sections `hero_badge`, `hero_title`, `hero_subtitle`, `cta_primary`, `cta_secondary`, `footer_tagline`; `privacy-policy` `body` (richtext, placeholder legal text), `terms-of-service` `body`; `get-involved` `new_club_intro`, `sponsor_intro`; `contact` `intro`, `address`; `about` sections used by Heritage/Leadership intros.
-8.6 Flagship cards (content block `home.flagship` list): Mahadan 9.0, Clean Yamuna & Green NCR, Digital Literacy Labs, Pediatric Health Screening, Youth Leadership Assembly — copy from mockup Home section.
+8.6 Flagship cards (content block `home.flagship` list): Mahadan 9.0, Clean Yamuna & Green NCR, Digital Literacy Labs, Pediatric Health Screening, Youth Leadership Assembly: copy from mockup Home section.
 8.7 `skill_tags`: skills [Photography, Video editing, Graphic design, Public speaking, Event management, Fundraising, Social media, Writing, Web development, First aid, Teaching, Music, Anchoring, Logistics], interests [Community Service, Club Service, International Service, Professional Development, Public Image, Environment, Health, Education].
-8.8 Dev-only seed (`prisma/seed-dev.ts`, run when `SEED_DEV=1`): super admin `admin@rotaract3011.org` / `Admin@12345`, one president+secretary+3 members for the first 5 clubs, 3 submitted reports, 2 published projects, 2 district events with checkins, sample announcements — enough for every screen to show data.
+8.8 Dev-only seed (`prisma/seed-dev.ts`, run when `SEED_DEV=1`): super admin `admin@rotaract3011.org` / `Admin@12345`, one president+secretary+3 members for the first 5 clubs, 3 submitted reports, 2 published projects, 2 district events with checkins, sample announcements: enough for every screen to show data.
 
 ---
 
 ## 9. Web application
 
-### 9.1 Tokens (`src/styles/tokens.css`) — exact
+### 9.1 Tokens (`src/styles/tokens.css`): exact
 ```css
 @import "tailwindcss";
 @theme {
@@ -683,7 +683,7 @@ Each line: route → page component → data → mockup (file, screen). Implemen
 - `/portal/admin/clubs/:clubId/:month` ScoreMonth (Portal Admin Part 1 §1): computed per category with expandable trace, one judged input + reason, save, query; "Assist" button (reports:score) shows suggestions panel from `/reports/:id/assist`.
 - `/portal/admin/clubs/:clubId/facts` ClubFacts (Part 1 §3). `/portal/admin/point-rules` (Part 1 §2). `/portal/admin/report-form` FormBuilder (Part 1 §4: field list with drag handles or up/down buttons, add field drawer, preview, publish version). `/portal/admin/requests/new` + `/portal/admin/requests` (Part 1 §5). `/portal/content` ContentEditor (Part 1 §6). `/portal/admin/roles` (Part 1 §7). `/portal/admin/events/:slug` EventCheckIn (Part 2 §9: camera QR via `@zxing/browser`, manual search, walk-in, live per-club counts). `/portal/members` MembersApprovals (Part 2 §10) + import wizard (upload → preview table → commit → report). `/portal/admin/effort-log` (Part 2 §12). `/portal/admin/announcements` Compose (Portal Part 2 §12) with `/portal/admin/announcements/audience` AudienceBuilder (Portal Admin Part 2 §13, live estimate). `/portal/admin/settings` (Part 2 §14). `/portal/admin/feedback` (Part 2 §15). `/portal/admin/showcase` ShowcaseQueue (Portal Part 1 §7: submitted text verbatim left, editable published copy right). `/portal/admin/users` (Portal Part 1 §8: user roles management, grant/revoke scoped roles). `/portal/admin/events` EventsAdmin (CRUD). `/portal/admin/public-content/*` simple CRUD tables for achievements/partners/publications/resources/past-drrs/district-team. `/portal/admin/audit`.
 
-**Subdomain surfaces** — see §10 for routes; shells use `SubdomainShell`.
+**Subdomain surfaces**: see §10 for routes; shells use `SubdomainShell`.
 
 ### 9.6 Frontend behaviours that are easy to get wrong
 - Never block the page with a full-screen loader; use skeletons in place.
@@ -714,7 +714,7 @@ Each project module in the API lives in `src/subdomains/<key>/` and exports `sum
 ## 11. Deployment and configuration
 
 ### 11.1 Infrastructure (already exists)
-- Postgres 18 container `rac3011-postgres` on the Oracle instance, reachable from the VPS as `10.44.44.2:5434`, db `rac3011`, user `rac3011`. Password in `~/.claude/secrets.md` under "RAC District 3011 Website — Postgres (Oracle)".
+- Postgres 18 container `rac3011-postgres` on the Oracle instance, reachable from the VPS as `10.44.44.2:5434`, db `rac3011`, user `rac3011`. Password in `~/.claude/secrets.md` under "RAC District 3011 Website: Postgres (Oracle)".
 - VPS `15.235.211.41` runs Dokploy; Cloudflare proxies `rotaract3011.org`; origin cert `/etc/ssl/cloudflare/rotaract3011.pem` + `.key`.
 - Redis: create Dokploy service `rac3011-redis` (redis:7, no public port).
 
