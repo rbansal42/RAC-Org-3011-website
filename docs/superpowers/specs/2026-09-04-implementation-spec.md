@@ -589,7 +589,7 @@ Each line: route → page component → data → mockup (file, screen). Implemen
 **Main surface, public**
 - `/` HomePage → `/public/home` → Public Pages Part 1 §1. Hero snap strip (native `scroll-snap-type:x mandatory`, autoplay every 5s paused on hover/touch/reduced-motion), live counter card (increments `/public/visits` once per session), 4 stats, flagship expanding carousel (flex 6/1/1/1/1, hover/focus expands, 0.7s), showcase teaser grid 4→2→1, 4 CTA cards, footer.
 - `/map` MapPage → `/public/clubs` → Part 1 §2. Leaflet + OSM tiles, zone filter chips, pin click → side panel (name, president + WhatsApp `https://wa.me/<digits>` + mailto, KPIs, "View full club profile" → `/leadership/clubs/:slug`), states: loading, tiles-failed banner, empty-zone.
-- `/projects` ShowcasePage → `/public/projects` → Part 1 §3; category filter chips, uniform-height grid, pagination. `/showcase/:slug` ShowcaseDetailPage → Part 1 §4 (photos gallery, lead + collaborating clubs, related). `/showcase/clubs/:clubSlug` ClubShowcasePage → Part 3 §22.
+- `/showcase` ShowcasePage → `/public/projects` → Part 1 §3; category filter chips, uniform-height grid, pagination. `/showcase/:slug` ShowcaseDetailPage → Part 1 §4 (photos gallery, lead + collaborating clubs, related). `/showcase/clubs/:clubSlug` ClubShowcasePage → Part 3 §22.
 - `/heritage` HeritagePage → Part 1 §5 (grouped by term, non-contiguous terms shown as "2015-16 · 2018-19"); `/heritage/:slug` DrrProfilePage → Part 1 §6 (low-res portrait renders at fixed 160px with soft border, never upscaled beyond source).
 - `/leadership` LeadershipPage → Part 1 §7 (core trio, DSC roster grid, club leadership list with search); `/leadership/clubs/:slug` ClubLeadershipPage → Part 1 §8 (board table with blood group, contacts, WhatsApp).
 - `/initiatives` InitiativesPage → `/public/initiatives` → Part 2 §9 + Part 3 §23 (unassigned card state "Open for bidding"; unreachable → last figure + timestamp chip).
@@ -604,7 +604,7 @@ Each line: route → page component → data → mockup (file, screen). Implemen
 - `/portal/dashboard` → role-aware: officer (reports:review) → OfficerDashboard (Portal Part 1 §11); president/secretary → ClubDashboard (Portal Part 1 §2: report status, points trend + per-category split, announcements); member → MemberDashboard (Portal Part 2 §15); DAC member → Portal Part 2 §14 variant.
 - `/portal/reports/new` NewReportPage (Portal Part 1 §3): schema-rendered, activity rows add/remove, autosave draft every 10s and on blur, "Notes for the district" textarea. `/portal/reports/:id/review` ReviewSubmitPage (§9). `/portal/reports/history` (§4). `/portal/reports/:id` ReportDetail incl. queried thread (§10).
 - `/portal/announcements` (Portal Part 1 §5). `/portal/resources` (Portal Part 2 §13: unlocked rows for the caller).
-- `/portal/my-club`, `/portal/events` ClubEventTracker (Portal Admin Part 1 §8), `/portal/showcase/submit` (Portal Admin Part 3 §17), `/portal/projects (own)`.
+- `/portal/my-club`, `/portal/events` ClubEventTracker (Portal Admin Part 1 §8), `/portal/showcase/submit` (Portal Admin Part 3 §17), `/portal/showcase/mine`.
 - `/portal/me` MemberCard (Portal Admin Part 2 §16), `/portal/me/profile` (Part 3 §18), `/portal/me/settings` (Part 3 §19: theme, 2FA, trusted devices, push permission button), `/portal/me/contributions`, `/portal/me/certificates`.
 - `/portal/directory` (Portal Admin Part 2 §11; privacy gate modal when not accepted). `/portal/feedback` (Part 2 §15 member side).
 
