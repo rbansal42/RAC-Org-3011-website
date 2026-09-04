@@ -248,6 +248,126 @@ and 404s/resets. Rahul said this was low priority either way; see `docs/decision
 Auth used: Global API Key for `00082.rahul@gmail.com` (`X-Auth-Email` + `X-Auth-Key`
 headers), same as the original VPS-targeting task used.
 
+**Update 2026-09-04 (later same day, §14.8 of the implementation spec): both records
+converted from proxied `A → 92.4.95.94` to proxied `CNAME → <tunnel-id>.cfargotunnel.com`**
+— see "Cloudflare Tunnel (rac3011-oracle)" below for the full story, rationale, and
+rollback recipe. `api.rotaract3011.org`'s record was deleted and recreated during
+troubleshooting, so its **current** id is `621a856f50395c34625f64476455f9db` (the id
+`261a5be179429e8fbfdc1f8213fec3f4` referenced above no longer exists).
+`testing.rotaract3011.org` kept its id (`494729a16f748a0e1159263c5febc7e9`), just PATCHed
+to CNAME. Every other record in this zone (apex, `www`, `*`, `staging.`, `staging-v2.`,
+`_domainconnect`) is untouched.
+
+## Cloudflare Tunnel (`rac3011-oracle`) — origin path for api./testing., decided 2026-09-05
+
+**Why**: measured from Delhi, this zone is served from Singapore (free plan has no India
+PoP) while the Oracle origin is ~30ms away in India — cold requests were detouring
+Delhi→Singapore→India→Singapore→Delhi (520-580ms cold, 141ms warm-connection, 135ms
+direct-to-origin, ~30ms origin app time; ~380ms of the cold cost was TCP+TLS setup).
+Rahul's decision (§14.8 of the implementation spec): Cloudflare Tunnel (free), not Argo
+(paid), not un-proxying (would forfeit WAF + edge cache). Only `api.rotaract3011.org` and
+`testing.rotaract3011.org` were moved — every other app/zone on this box or account is
+untouched.
+
+- **Tunnel**: `rac3011-oracle`, id `9e53fcd1-9627-45a4-800a-598586f8d92c`, created via
+  `POST /accounts/6df5d6f65155cc519f481070550102fc/cfd_tunnel` (API, not
+  `cloudflared tunnel login` — no interactive browser available). `config_src: cloudflare`
+  (remote-managed ingress, pushed via `PUT .../cfd_tunnel/{id}/configurations`), so the
+  ingress rules live in Cloudflare's control plane, not a local `config.yml` on Oracle.
+- **Ingress** (2 hostname rules + catch-all 404):
+  ```json
+  {
+    "ingress": [
+      { "hostname": "api.rotaract3011.org", "service": "https://127.0.0.1:443",
+        "originRequest": { "originServerName": "api.rotaract3011.org", "httpHostHeader": "api.rotaract3011.org" } },
+      { "hostname": "testing.rotaract3011.org", "service": "https://127.0.0.1:443",
+        "originRequest": { "originServerName": "testing.rotaract3011.org", "httpHostHeader": "testing.rotaract3011.org" } },
+      { "service": "http_status:404" }
+    ]
+  }
+  ```
+  Target is `https://127.0.0.1:443` (Traefik's `websecure` entrypoint, TLS +
+  `letsencrypt` certResolver via HTTP-01 on port 80), **not** port 80 — Traefik's `web`
+  entrypoint has a zone-wide `redirect-to-https` middleware, so proxying plain HTTP would
+  create a redirect loop against an edge that's already terminating TLS. `originServerName`
+  is set explicitly so Traefik's SNI-based per-domain TLS routing picks the right
+  router/cert (confirmed via `openssl s_client -connect 127.0.0.1:443 -servername
+  api.rotaract3011.org` → `CN=api.rotaract3011.org`, real Let's Encrypt cert).
+  `httpHostHeader` preserves the original Host header so Traefik's `Host(...)` router
+  rules keep matching (Traefik's service config already has `passHostHeader: true`).
+  Verified live on Oracle first, before DNS cutover: `curl -sk
+  https://127.0.0.1:443/health -H 'Host: api.rotaract3011.org'` → `200` in ~11ms.
+- **Install**: official ARM64 `.deb` (`cloudflared-linux-arm64.deb` from the GitHub
+  releases page), `sudo dpkg -i`, then `sudo cloudflared service install <token>` — this
+  is the token-based one-shot installer, **not** the Hermes-gateway pattern (that's a
+  user-level systemd service; this is a **system-level** unit since it needs no per-user
+  state and Oracle already has passwordless root `sudo`). Installer auto-creates:
+  - Unit file: `/etc/systemd/system/cloudflared.service` (`enabled`, running as root,
+    `ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run --token-file
+    /etc/cloudflared/token`)
+  - Token file: `/etc/cloudflared/token`
+  - `sudo systemctl status cloudflared` / `sudo systemctl restart cloudflared` /
+    `sudo journalctl -u cloudflared -f` to manage.
+  - Confirmed `enabled` (survives reboot) and `active (running)`, 4 QUIC edge connections
+    registered (Mumbai `bom03`/`bom06`/`bom08`/`bom09`/`bom11` — colo varies per
+    (re)connect, not fixed), tunnel status `healthy` via
+    `GET /accounts/{acct}/cfd_tunnel/{id}`.
+- **DNS cutover**: both `api.rotaract3011.org` and `testing.rotaract3011.org` changed
+  from proxied `A → 92.4.95.94` to proxied `CNAME → 9e53fcd1-9627-45a4-800a-598586f8d92c.cfargotunnel.com`.
+  **Rollback (one call per hostname, reversible any time)**: PATCH the record back to
+  `{"type":"A","content":"92.4.95.94","proxied":true}` — no other zone record needs to
+  change, the tunnel/cloudflared can keep running idle either way.
+- **Gotcha — expect ~5 minutes of 530/error-1033 after any `cloudflared` restart.**
+  Immediately after DNS cutover, `api.rotaract3011.org` returned `530 (error code:
+  1033 — "Argo Tunnel error", no active connector found)` consistently for ~8 minutes
+  despite the tunnel showing `healthy`/4 connections the whole time in the Cloudflare
+  API, correct DNS, correct ingress config, and the origin itself responding `200` in
+  11ms when queried directly on the box. Ruled out during troubleshooting: DNS
+  misconfiguration (verified via `dig @1.1.1.1`, records correct), duplicate/conflicting
+  DNS records (only the expected ones exist — checked the whole zone), WAF/firewall
+  rules, page rules, origin rules, load balancers, custom hostnames (none configured on
+  this zone), zone SSL mode (`full`, correct). Recreating the DNS record from scratch
+  (delete + fresh `POST` instead of `PATCH`-in-place) did not help either — still failed.
+  **The actual trigger was restarting `cloudflared` for a diagnostic test**: stopping and
+  restarting it broke the *already-working* `testing.rotaract3011.org` too, and both
+  hostnames then took **~5 minutes** (not seconds) to start routing correctly again,
+  even though the tunnel API reported `healthy` connections within ~5 seconds of
+  startup. Conclusion: Cloudflare's edge takes several minutes to propagate a
+  Tunnel-hostname's *live* routing state globally after a connector reconnects — likely
+  because `cloudflared` briefly logs "No ingress rules were defined... will return 503"
+  for about 1 second before it fetches its remote config on every fresh start, and edge
+  nodes that probe during that exact window can hold a negative/stale result for
+  several minutes before re-checking. **Operational implication: don't restart
+  `cloudflared` casually** (e.g. for config tweaks) — each restart costs ~5 minutes of
+  possible 530s on both hostnames, worse than the problem the tunnel was built to fix.
+  A `systemctl reload` isn't supported by cloudflared for this; the practical mitigation
+  is to push ingress changes via the remote `configurations` API (which cloudflared picks
+  up live, no restart) rather than reinstalling/restarting the service, and to avoid
+  restarts during business hours.
+- **Verification after the 5-minute settle**: 40/40 consecutive requests (20 each
+  hostname) returned `200` with zero errors; `GET /public/home` twice showed
+  `cf-cache-status: HIT` on the second request (tunnel does not break §14.1/14.2 edge
+  caching); CORS preflight headers (`Origin: https://testing.rotaract3011.org` →
+  `access-control-allow-origin`/`-credentials`) still correct on `api.`; SPA HTML and
+  `/health` JSON content both verified byte-for-byte sane (not just HTTP 200).
+- **Measured improvement** (Delhi, after the tunnel settled, curl `-w
+  time_total`, 2026-09-05):
+
+  | | Baseline (proxied-A, pre-tunnel) | Post-tunnel |
+  |---|---|---|
+  | `api.rotaract3011.org/health` cold (fresh TCP+TLS each time) | 314-526ms (one 5.2s outlier observed) | 301-498ms, no outliers across 20 reqs |
+  | `testing.rotaract3011.org/` cold | 331-598ms | 289-299ms |
+  | `api.../health` warm (2nd+ req, reused connection) | 144ms | 134ms |
+  | `testing.../` warm (2nd+ req, reused connection) | 147-390ms | 135ms |
+
+  Net effect: real but modest — the origin (Oracle Traefik) already answers in
+  single-digit-to-low-double-digit ms, and `s-maxage=600` edge caching (landed the same
+  day by the parallel caching workstream) already absorbs most repeat-request cost
+  independent of the tunnel. The tunnel's clearest win is **eliminating cold-request
+  variance** (no more multi-second outliers) and shaving ~50-250ms off cold/first-hit
+  requests by removing the CF-edge→origin TCP+TLS handshake. It did **not** need to be
+  rolled back — no regression versus baseline on any measured path.
+
 ## TLS / routing — no nginx vhost needed
 
 The task's default assumption (mirror the `photodump.rbansal.xyz` nginx→Traefik-on-18080
@@ -394,3 +514,20 @@ successfully pushed and pulled under the new org-owned paths.
 | Backup cron (Oracle) | OK, unaffected |
 | VPS orphan project | Left alone — VPS is being decommissioned separately, not touched this session |
 | Other 7 `round-robin-solutions` repos / other Oracle apps | Read-only inspection only, not modified |
+
+**Update 2026-09-04/05**: several rows above are now stale — `rac3011-api`'s Prisma
+P3005 crash-loop was fixed by a parallel workstream (confirmed `/health` → `200` at the
+start of the tunnel task) and both `api.` and `testing.` DNS records are no longer plain
+`A → 92.4.95.94` (see "Cloudflare Tunnel" section above for the current state and why).
+
+| Check (Cloudflare Tunnel task) | Result |
+|---|---|
+| `rac3011-oracle` tunnel created via API | OK, id `9e53fcd1-9627-45a4-800a-598586f8d92c`, status `healthy`, 4 QUIC connections to Mumbai (`bom*`) colos |
+| `cloudflared` installed + systemd service | OK, ARM64 `.deb`, `sudo cloudflared service install <token>`, unit `enabled` + `active`, survives reboot |
+| Ingress → Traefik `websecure` (127.0.0.1:443) with correct SNI/Host | OK, verified locally pre-cutover (`200` in 11ms) and via `openssl s_client` (correct per-domain LE cert) |
+| DNS cutover, both hostnames, proxied A → proxied CNAME to tunnel | OK, only those 2 records touched, rollback recipe recorded |
+| Edge routing after cutover | Took ~8 min to stabilize initially, then ~5 min again after a diagnostic `cloudflared` restart (see gotcha above) — **not a permanent break**, self-resolved, no rollback needed |
+| Post-settle: 20x `api.../health` + 20x `testing.../` | 40/40 `200`, zero errors |
+| `cf-cache-status: HIT` on 2nd `GET /public/home` | OK — tunnel does not break edge caching |
+| CORS from `testing.` origin against `api.` | OK, correct `access-control-allow-origin`/`-credentials` |
+| Cold/warm latency vs baseline | Modest real improvement, cold-request variance eliminated (see measurement table above) |
