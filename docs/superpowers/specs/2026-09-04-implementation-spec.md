@@ -14,7 +14,7 @@ Companion documents (read only when this spec points you to them):
 2. Two repositories: `rac3011-api` (backend) and `rac3011-web` (frontend). Never put backend code in the web repo or vice versa.
 3. Backend layering (enforced by ESLint `no-restricted-imports`): `*.controller.ts` may import only its module's `*.service.ts` and `dto/`; `*.service.ts` may import its own `*.repository.ts`, other modules' `*.service.ts`, and `common/`; `*.repository.ts` is the only file allowed to import `@prisma/client` or `PrismaService`. `*.transformer.ts` are pure functions (no imports from services/repositories).
 4. Every club reference is a foreign key column `clubId` → `clubs.id`. Never store a club name in any other table.
-5. No file uploads to our servers. Any image/document field is a `String` URL to an external host (Google Drive, Google Photos, YouTube, etc.).
+5. Files are uploaded through the `StoragePort` module only (§3A): UploadThing for public assets, Cloudflare R2 for private ones. Never write files to the container filesystem, never base64 into Postgres, and never call a storage SDK outside `src/storage/`. External links (Drive/Photos/YouTube) remain a supported alternative input for every asset field.
 6. Every mutating endpoint has `@RequirePermission('<key>')` and a scope check (§4.4). Every list/read endpoint filters by the caller's scope inside the repository query.
 7. Every notification goes through `NotificationPort.notify()` (§7). No module imports an email or push SDK directly.
 8. Audit log rows (§4.6) are written for every action listed in §4.6.
@@ -287,6 +287,56 @@ model AnnouncementRead { announcementId String @map("announcement_id"); announce
 
 ---
 
+## 3A. Media and file storage (locked 2026-09-04)
+
+This supersedes the earlier "no server-owned object storage / paste a link only" decision. Three tiers, chosen per asset by what it is, never by who uploads it.
+
+| Tier | Store | What goes here | Access |
+|---|---|---|---|
+| **T1 Permanent public** | UploadThing app `hzcev3x726` (`UPLOADTHING_TOKEN_PERMANENT`) | District/club logos, letterheads, past-DRR portraits, district-team portraits, partner logos, charter certificates, publication covers, static page imagery | Public CDN URL, cached forever, filename-versioned |
+| **T2 Dynamic public** | UploadThing app `mjk92b8biq` (`UPLOADTHING_TOKEN_DYNAMIC`) | Event photos, showcase project photos, member profile photos, RIDE gallery images, Mission 3011 camp photos, club event photos | Public CDN URL; deletable when the owning row is deleted |
+| **T3 Private** | Cloudflare R2 bucket `rac3011-private` | Generated certificates and directory PDFs, point-system and governance documents flagged private, anything behind a `resources.is_locked` row, report attachments | Never public: served only through `GET /files/:id` which checks RBAC then streams (or 302s to a 5-minute presigned URL) |
+| Backups | R2 bucket `rac3011-backups` | `pg_dump` archives | Ops only, no app access |
+
+**Rules**
+1. **One module owns all of it**: `src/storage/`. `StoragePort` is the only interface the rest of the API sees:
+```ts
+export type StorageTier = 'permanent' | 'dynamic' | 'private';
+export interface StoredFile { id: string; tier: StorageTier; key: string; url: string | null; name: string; mimeType: string; size: number; }
+export abstract class StoragePort {
+  abstract createUploadGrant(input: { tier: StorageTier; mimeType: string; size: number; resourceType: string; resourceId?: string; userId: string }): Promise<{ grantId: string; uploadUrl: string; fields?: Record<string,string> }>;
+  abstract finalise(grantId: string, providerKey: string): Promise<StoredFile>;
+  abstract getPrivateStream(fileId: string): Promise<{ stream: NodeJS.ReadableStream; mimeType: string; name: string }>;
+  abstract delete(fileId: string): Promise<void>;
+}
+```
+Implementations: `UploadThingAdapter` (T1/T2, using the UploadThing server SDK `UTApi` with the token for that tier) and `R2Adapter` (T3, `@aws-sdk/client-s3` + `s3-request-presigner` against the R2 S3 endpoint). `StubStorageAdapter` is used in tests and whenever `STORAGE_DRIVER=stub` (this dev network blocks TLS to `*.r2.cloudflarestorage.com`, so local work uses the stub and R2 paths are verified on the VPS).
+2. **Uploads are grant-based, never unauthenticated.** `POST /files/grants` `{ tier, mimeType, size, resourceType, resourceId? }` requires a session **and** the permission that owns the target resource (table below); the server validates MIME against an allow-list (`image/jpeg|png|webp|avif`, `application/pdf`, and for T3 also `application/vnd.openxmlformats-*`) and size caps (T1 5 MB, T2 10 MB, T3 25 MB), then returns a short-lived grant. The client uploads directly to the provider and calls `PATCH /files/grants/:grantId { providerKey }` to finalise, which creates the `files` row. Unfinalised grants expire after 15 minutes and are swept nightly.
+3. **`files` table** (new, replaces the ad-hoc `String[]` URL columns for anything we host):
+```prisma
+enum StorageTier { permanent dynamic private }
+model StoredFileRow {
+  id String @id @default(cuid())
+  tier StorageTier
+  provider String            // uploadthing | r2
+  providerKey String @map("provider_key")
+  url String?                // null for private tier
+  name String; mimeType String @map("mime_type"); size Int
+  resourceType String @map("resource_type"); resourceId String? @map("resource_id")
+  uploadedById String @map("uploaded_by_id")
+  clubId String? @map("club_id")     // set when the asset belongs to a club, for RBAC on private reads
+  @@index([resourceType, resourceId]) @@index([tier]) @@map("files")
+}
+```
+Rows that reference images keep a `String[]` of **file ids** (not URLs) where the spec previously said URLs: `projects.photos`, `events.photos`, `m3011_camps.photos`. Single-image fields (`member_profiles.photo_url`, `partners.logo_url`, `past_drrs.photo_url`, `publications.cover_url`, `clubs.logo_url`, `events.cover_url`, `achievements.certificate_url`) become `*_file_id String?` FKs, with the old `*_url` column kept for one release for externally-hosted values and dropped in build step 14.
+4. **External links stay supported, they are just no longer the only option.** `asset_links` (§3.4) continues to exist for Google Drive/Photos albums and YouTube videos, which we deliberately do not re-host: RIDE gallery videos, Google Photos album links on `/resources/photos`, and any document a club would rather keep in its own Drive. The link-health service (§6.4) applies to those; uploaded files never need checking. Every asset field in the UI therefore offers **both**: "Upload" (default) and "Paste a link".
+5. **Deletion**: deleting a row deletes its files through `StoragePort.delete` in the same service call; a nightly job removes `files` rows whose `resourceId` no longer resolves (orphan sweep), logging counts.
+6. **Private reads**: `GET /files/:id`: if `tier != private`, 301 to the CDN URL; otherwise resolve the owning resource, run the same permission + scope check as reading that resource, then stream. No presigned URL is ever handed to a client that could not read the resource, and presigns expire in 5 minutes.
+
+**Permission per upload target** (`resourceType` → permission, scope): `member_photo` → `profile:edit` (own row only) · `club_logo` → `clubs:edit` (own club) · `project_photo` → `showcase:submit` (own club) · `event_photo` → `events:manage` or `club_events:log` (own club) · `camp_photo` → own club president/secretary · `ride_gallery` → `subdomain:ride:manage` · `partner_logo`, `past_drr_photo`, `district_team_photo`, `publication_cover`, `achievement_certificate`, `content_block` → `public_content:manage` or `content:edit` · `resource_document` → `resources:manage` · `certificate` → generated server-side only, no grant route.
+
+---
+
 ## 4. Authentication and RBAC
 
 ### 4.1 Better Auth configuration (`src/auth/auth.config.ts`)
@@ -441,6 +491,7 @@ Permissions in brackets; `own` = caller must be in scope of the row's `club_id`/
 | rcl | `GET/POST /rcl/teams`, `GET/PATCH /rcl/teams/:id` (roster inline `players[]`); `GET/POST /rcl/fixtures`, `PATCH /rcl/fixtures/:id` `{scheduledAt?, venue?, status?, result?}` [subdomain:rcl:manage] | result is a field of fixture |
 | careerbridge | `GET /careerbridge/listings` [subdomain:careerbridge:manage] filters `status`; `PATCH /careerbridge/listings/:id` `{status:'verified'|'rejected'|'filled'|'expired', rejectionReason}` | posting is public (below) |
 | ride | `GET/POST /ride/support-clubs`, `PATCH /ride/support-clubs/:id` (own club); `GET/POST /ride/delegations`, `GET/PATCH/DELETE /ride/delegations/:id` [subdomain:ride:manage]; `PUT /ride/delegations/:id/hosts` `{hosts[]}`; `GET/POST/DELETE /ride/gallery-items[/:id]` | |
+| files | `POST /files/grants` (session + owning permission per §3A table), `PATCH /files/grants/:grantId` `{providerKey}`, `GET /files/:id` (public tiers 301 to CDN; private tier RBAC-checked stream), `DELETE /files/:id` (owning permission) | §3A |
 | health | `GET /health`, `GET /ready` | |
 
 ### 5.3 Public routes (no auth, cached 60s unless noted)
@@ -510,7 +561,7 @@ Inputs: settings `drr.workingDays` (0–6), `drr.dayStart` ("10:00"), `drr.dayEn
 `check(url)`: if host is `drive.google.com` or `docs.google.com` → extract file id (`/d/<id>` or `?id=`) → `drive.files.get({fileId, fields:'id,mimeType'})` with the service account → ok; 404 → broken; 403 → private. If host is `photos.app.goo.gl`/`photos.google.com` → HTTP GET follow redirects, 200 → ok. Otherwise HTTP HEAD (fallback GET on 405), 2xx → ok, 4xx/5xx/timeout(8s) → broken. Nightly repeatable job (`0 2 * * *` IST) rechecks every `asset_links` row; status transition ok→broken/private notifies `ownerUserId` (template `link-broken`) once per transition.
 
 ### 6.5 Email provider pool (`src/notifications/email/`)
-Providers in order: `resend` (cap env `RESEND_DAILY_CAP` default 100), `mailgun` (100), `gmail` (500). `pick(day)`: first provider whose `email_provider_usage.count < cap` and not marked failed in the last 10 minutes (in-memory). Increment count atomically (`INSERT ... ON CONFLICT DO UPDATE count = count + 1 RETURNING count`) before sending; on send error mark provider failed and try the next; if all fail, outbox row `failed` with error, BullMQ retries with backoff 1m, 10m, 1h (3 attempts). `MAIL_DRIVER=console` logs instead of sending. In non-production, recipients not in `MAIL_ALLOWLIST` are rewritten to the first allowlisted address with the original address prepended to the subject.
+Providers in order: **`oracle` (Oracle Cloud Email Delivery, primary, cap env `ORACLE_DAILY_CAP` default 100)**, then `resend` (`RESEND_DAILY_CAP` default 100), `mailgun` (100), `gmail` (500) - about 800/day pooled. Oracle is SMTP (nodemailer, `smtp.email.<region>.oci.oraclecloud.com:587`, STARTTLS, IAM SMTP credentials) and is tried first for every message. `pick(day)`: first provider whose `email_provider_usage.count < cap` and not marked failed in the last 10 minutes (in-memory). Increment count atomically (`INSERT ... ON CONFLICT DO UPDATE count = count + 1 RETURNING count`) before sending; on send error mark provider failed and try the next; if all fail, outbox row `failed` with error, BullMQ retries with backoff 1m, 10m, 1h (3 attempts). `MAIL_DRIVER=console` logs instead of sending. In non-production, recipients not in `MAIL_ALLOWLIST` are rewritten to the first allowlisted address with the original address prepended to the subject.
 
 ### 6.6 Announcement audience resolution
 `resolve(audience) → userIds`: union of (users holding any `roleKeys` role) ∩ (if `zoneIds` or `clubIds` given: users whose profile club is in those zones/clubs, plus role holders scoped to those zones/clubs) ∪ explicit `memberIds`. Empty audience object = nobody (400).
@@ -688,8 +739,9 @@ Each project module in the API lives in `src/subdomains/<key>/` and exports `sum
 - Redis: create Dokploy service `rac3011-redis` (redis:7, no public port).
 
 ### 11.2 Environment variables (exact names)
-API: `NODE_ENV`, `PORT` (3000), `WORKER` (unset|1), `DATABASE_URL`, `SHADOW_DATABASE_URL` (CI only), `REDIS_URL`, `AUTH_SECRET` (32+ bytes), `AUTH_URL` (`https://api.rotaract3011.org`), `COOKIE_DOMAIN`, `WEB_ORIGINS` (comma list), `MAIL_DRIVER` (console|pool), `MAIL_FROM` (`Rotaract District 3011 <no-reply@rotaract3011.org>`), `MAIL_ALLOWLIST`, `RESEND_API_KEY`, `RESEND_DAILY_CAP`, `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_DAILY_CAP`, `GMAIL_SMTP_USER`, `GMAIL_SMTP_APP_PASSWORD`, `GMAIL_DAILY_CAP`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (`mailto:...`), `GOOGLE_SERVICE_ACCOUNT_JSON_B64`, `DRR_CALENDAR_ID`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `DRISHTI_PII_KEY` (32-byte hex), `SENTRY_DSN`, `LOG_LEVEL`, `SEED_DEV`.
+API: `NODE_ENV`, `PORT` (3000), `WORKER` (unset|1), `DATABASE_URL`, `SHADOW_DATABASE_URL` (CI only), `REDIS_URL`, `AUTH_SECRET` (32+ bytes), `AUTH_URL` (`https://api.rotaract3011.org`), `COOKIE_DOMAIN`, `WEB_ORIGINS` (comma list), `MAIL_DRIVER` (console|pool), `MAIL_FROM` (`Rotaract District 3011 <no-reply@rotaract3011.org>`), `MAIL_ALLOWLIST`, `ORACLE_SMTP_HOST`, `ORACLE_SMTP_PORT`, `ORACLE_SMTP_USER`, `ORACLE_SMTP_PASSWORD`, `ORACLE_DAILY_CAP`, `RESEND_API_KEY`, `RESEND_DAILY_CAP`, `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_DAILY_CAP`, `GMAIL_SMTP_USER`, `GMAIL_SMTP_APP_PASSWORD`, `GMAIL_DAILY_CAP`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (`mailto:...`), `GOOGLE_SERVICE_ACCOUNT_JSON_B64`, `DRR_CALENDAR_ID`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `DRISHTI_PII_KEY` (32-byte hex), `STORAGE_DRIVER` (live|stub), `UPLOADTHING_TOKEN_PERMANENT`, `UPLOADTHING_TOKEN_DYNAMIC`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_PRIVATE`, `R2_BUCKET_BACKUPS`, `SENTRY_DSN`, `LOG_LEVEL`, `SEED_DEV`.
 Web (build-time): `VITE_API_ORIGIN`, `VITE_SENTRY_DSN`, `VITE_VAPID_PUBLIC_KEY`.
+Secrets and provisioned values live in `~/.claude/secrets.md` under "RAC District 3011 Platform" (UploadThing tokens, R2 keys, Oracle Email Delivery) - never in the repo.
 
 ### 11.3 Dokploy apps (project `rac3011`)
 - `rac3011-api`: Docker image built by GitHub Actions to `ghcr.io/rbansal42/rac3011-api:main`; command default; domain `api.rotaract3011.org`; healthcheck `/health`. Run `prisma migrate deploy && npm run seed` as the container entrypoint pre-step (`docker-entrypoint.sh`).
@@ -698,7 +750,7 @@ Web (build-time): `VITE_API_ORIGIN`, `VITE_SENTRY_DSN`, `VITE_VAPID_PUBLIC_KEY`.
 Cloudflare DNS: proxied `A` records for each hostname → `15.235.211.41`. Host nginx vhost per hostname proxying to Traefik `127.0.0.1:18080` with the origin cert (copy the existing `staging.rotaract3011.org` vhost).
 
 ### 11.4 Web CSP (nginx `add_header Content-Security-Policy`)
-`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://drive.google.com https://*.googleusercontent.com https://photos.google.com https://*.ggpht.com https://i.ytimg.com; media-src 'self' https://drive.google.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://drive.google.com; connect-src 'self' https://api.rotaract3011.org https://*.sentry.io; worker-src 'self'; manifest-src 'self'`
+`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.ufs.sh https://utfs.io https://*.tile.openstreetmap.org https://drive.google.com https://*.googleusercontent.com https://photos.google.com https://*.ggpht.com https://i.ytimg.com; media-src 'self' https://drive.google.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://drive.google.com; connect-src 'self' https://api.rotaract3011.org https://*.ingest.uploadthing.com https://*.ufs.sh https://*.sentry.io; worker-src 'self'; manifest-src 'self'`
 
 ### 11.5 CI (GitHub Actions, both repos)
 API: `npm ci` → `npm run lint` → `npx prisma validate` → `npm run test` → `npm run test:e2e` (service container postgres:18 for shadow + testcontainers) → migration replay check (`prisma migrate deploy` on a fresh DB) → build image → push GHCR on `main` → call Dokploy redeploy API. Web: `npm ci` → `tsc -b` → `npm test` → `npm run build` → `npx playwright test` (against `vite preview` + API mock server in `e2e/mock-api.ts`) → Dokploy redeploy on `main`.
@@ -719,13 +771,15 @@ API e2e (supertest, real Postgres):
 9. Directory: opt-in without privacy acceptance → 409; after acceptance → listed; non-opted members never appear.
 10. Showcase: member submits with consent → president notified; DSC edits published copy and publishes → `/public/projects/:slug` returns published copy, not submitted text; collaborator clubs returned as objects with ids.
 11. Announcement audience `{roleKeys:['secretary'], zoneIds:[Agni]}` estimate = number of secretaries of Agni clubs; sending creates one outbox row per recipient per channel; president targeting another club → 403.
-12. Email pool: with usage resend=100 for today → next send uses mailgun; when mailgun send throws → gmail used and outbox `provider='gmail'`.
+12. Email pool: with usage oracle=100 and resend=100 for today → next send uses mailgun; when mailgun send throws → gmail used and outbox `provider='gmail'`.
 13. DRR booking on a slot overlapping a Google busy interval → 409; valid → `requested` + `googleEventId` set (fake Google client); confirm → notification `booking-confirmed`.
 14. RIDE: assign hosts `[A: 3 days, 2 members]` → A gets `is_ride_hosting_days=120`, `is_ride_members_sent=60`, `is_ride_both=50`; reassign to B → A's entries removed.
 15. Career Bridge: post → `pending_email`; verify token → `pending`; verify by admin → visible in `/public/careerbridge/listings`; expiry job after N days → `expired` hidden.
 16. RCL: two teams, one result 150/5 in 20 ov vs 120/8 in 20 ov → standings winner 2 pts, NRR +1.5/−1.5.
 17. Link health: Drive id returning 404 from fake Drive client → status broken → owner gets `link-broken` once; rerun → no second notification.
-18. `POST /public/visits` twice from same IP within a minute → second is 429; counter increments once.
+18. Storage: `POST /files/grants` without a session → 401; with a member session for `resourceType=partner_logo` → 403; for `member_photo` on another member's row → 403; oversized/wrong MIME → 400; happy path grant → finalise → `files` row with tier `dynamic` and a CDN url. `GET /files/:id` for a private-tier file as a caller who cannot read the owning resource → 404; as an entitled caller → 200 stream. Deleting the owning row deletes the file through the port (stub adapter records the call).
+19. Email pool: with Oracle usage at its cap for today → next send uses Resend; Oracle SMTP throwing → immediate failover to Resend with outbox `provider='resend'`.
+20. `POST /public/visits` twice from same IP within a minute → second is 429; counter increments once.
 
 Web (Vitest): every primitive renders in both themes; `resolveSurface` for all hostnames; `can()` matrix; NewReport autosave; ScoreMonth shows no input next to computed values; ImageSlot fallback on error. Playwright: each screen in §9.5 and §10 loads at 390/768/1440 with zero axe `serious`/`critical` violations, using `e2e/mock-api.ts` fixtures.
 
