@@ -120,240 +120,170 @@ Scripts: `dev`, `build` (= `tsc -b && vite build && tsx scripts/generate-sitemap
 
 ---
 
-## 3. Database schema (Prisma, exact)
+## 3. Database architecture (locked)
 
-`prisma/schema.prisma`. Generator `prisma-client-js`, datasource postgresql `env("DATABASE_URL")`. All tables `@@map` to snake_case; all columns `@map` to snake_case (write them out; Prisma has no global mapping). Every model has `createdAt DateTime @default(now()) @map("created_at")` and `updatedAt DateTime @updatedAt @map("updated_at")` unless stated. IDs are `String @id @default(cuid())` unless stated. Enums are Prisma enums with the values listed.
+### 3.0 Binding decisions
 
-### 3.1 Baseline: legacy tables
+| # | Decision | Rule |
+|---|----------|------|
+| D1 | Clean schema, legacy isolated | At baseline, rename `user_profiles → legacy_user_profiles`, `monthly_reports → legacy_monthly_reports`, `project_submissions → legacy_project_submissions`, `announcements → legacy_announcements`. Only `clubs` is kept and extended. New tables are designed clean (no `status2`/`title2` shims). `scripts/migrate-legacy.ts` copies legacy rows into the new tables once (idempotent via `legacy_id` columns). Legacy tables are dropped in build step 14. |
+| D2 | Identifiers | `id String @id @default(cuid())` on every table except `clubs.id` (legacy text id, kept) and Better Auth tables (their own ids). External references in URLs use `id`; public pages additionally use `slug` where defined. |
+| D3 | Naming | Tables: plural snake_case (`@@map`). Columns: snake_case (`@map`). Enums: Postgres enums, singular snake_case values. Booleans `is_*`/`has_*` or plain adjective; timestamps `*_at`; dates `*_on`. |
+| D4 | Timestamps | `created_at`, `updated_at` on every table (join tables included). No soft deletes: deletions are real and the prior state is captured in `audit_log.before`. |
+| D5 | Club references | Always `club_id` FK → `clubs.id` with `ON DELETE RESTRICT`. Zone is never stored on a child row; derive through `clubs.zone_id`. |
+| D6 | Rotary-year partitioning | Tables whose meaning resets each year carry `ry_year Int` and a unique key including it: `club_facts`, `point_rules`, `club_point_entries`, `club_board_members`, `ride_support_clubs`, `district_team`. Sports use `season Int` (same integer). |
+| D7 | JSON usage | `Json` columns are allowed only for: `settings.value`, `content_blocks.draft_value/published_value`, `reports.values`, `report_requests.questions`, `report_request_responses.answers`, `announcements.audience`, `club_point_entries.trace`, `certificates.data`, `enquiries.payload`, `clubs.social_links`. Anything that is a list of entities (clubs, members, photos) is a table or a `String[]` of URLs, never JSON objects. |
+| D8 | Money and points | `Decimal @db.Decimal(10,2)`. Hours `Decimal(6,2)`. Overs `Decimal(4,1)`. |
+| D9 | Scope columns | Every row that is subject to RBAC scoping has exactly one of: `club_id` (club scope), `project_key ProjectKey` (project scope), or none (district-wide). Zone scope is resolved through `clubs.zone_id` at query time. |
+| D10 | Sensitive data | Only `drishti_beneficiaries.phone_encrypted` is encrypted (AES-256-GCM, key `DRISHTI_PII_KEY`, iv‖tag‖ciphertext base64). Passwords/OTP secrets live only in Better Auth tables. No PII in `audit_log.before/after` beyond ids and the changed fields. |
+| D11 | Indexes | Every FK gets an index. Every `(club_id, ry_year)` pair, every `status` column that is filtered in a list endpoint, and every `starts_at`/`date` used for range queries gets an index. Unique constraints as listed per table. |
+| D12 | Migrations | Prisma migration files generated with `prisma migrate diff`, hand-edited only to add partial indexes and data backfills. Expand/contract for renames (add → backfill → switch code → drop in a later migration). CI replays all migrations from an empty database. |
+| D13 | Access path | Prisma is only ever called from `*.repository.ts`. Repositories receive a `ScopeFilter` (`{ all: true } | { clubIds: string[] } | { projectKeys: ProjectKey[] }`) and apply it in the `where` clause. |
+| D14 | Denormalisation | Not allowed except: `clubs.member_count` (maintained by trigger-free service update on approve/suspend) and `page_views.count`. Everything else is computed at read time or cached in `settings` under `summary_cache:*`. |
 
-The target database already contains `clubs`, `user_profiles`, `monthly_reports`, `project_submissions`, `announcements`. Step 1 is `prisma db pull`, then write the baseline migration with `prisma migrate diff --from-empty --to-schema-datamodel` and mark it applied with `prisma migrate resolve --applied <name>`. Keep `user_profiles` as `LegacyUserProfile @@map("user_profiles")` (read-only, dropped in §13 phase 14). Rename models: `clubs → Club`, `monthly_reports → MonthlyReport`, `project_submissions → ProjectSubmission`, `announcements → Announcement`.
+### 3.1 Entity map
 
-### 3.2 Identity, RBAC, audit
+```
+zones 1─* clubs 1─* member_profiles 1─1 user (better-auth) 1─* user_roles *─1 roles *─* permissions
+clubs 1─* club_board_members | club_facts(ry) | reports 1─* report_queries | club_point_entries *─1 point_rules *─1 point_categories | effort_log | events(club events) | ride_support_clubs | rcl_teams | m3011_camps(lead) | project_clubs *─1 projects
+member_profiles 1─* event_rsvps | event_checkins | member_badges | certificates | feedback | announcement_reads | push_subscriptions | member_privacy_acceptances
+report_form_schemas 1─* report_form_fields ; reports.schema_version → report_form_schemas.version
+events 1─* event_rsvps | event_checkins | feedback(event-scoped)
+announcements 1─* announcement_reads ; notification_outbox (independent) ; email_provider_usage
+content_blocks ; settings ; asset_links(polymorphic by resource_type/resource_id) ; audit_log(polymorphic)
+past_drrs ; district_team ; achievements ; partners ; publications ; resources ; sister_club_requests ; enquiries ; page_views
+drr_bookings ; drr_blocks
+m3011_camps 1─* m3011_camp_clubs ; drishti_beneficiaries 1─* drishti_surgeries ; rcl_teams 1─* rcl_players ; rcl_fixtures 1─1 rcl_results ; cb_listings ; ride_delegations 1─* ride_delegation_hosts ; ride_gallery_items
+```
 
+### 3.2 Baseline migration
+
+```bash
+prisma db pull                       # introspect the 5 legacy tables
+# edit schema.prisma: rename models to Legacy*, @@map to legacy_* ; keep Club as Club
+prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/migrations/20260905000000_baseline/migration.sql
+# prepend to that file:
+#   ALTER TABLE user_profiles RENAME TO legacy_user_profiles; (and the other three)
+prisma migrate resolve --applied 20260905000000_baseline
+```
+Then add all new models below and generate `20260905000100_core` with `prisma migrate diff`.
+
+### 3.3 Schema
+
+Shared fragments: every model has
 ```prisma
-model User {            // better-auth managed
-  id String @id
-  name String
-  email String @unique
-  emailVerified Boolean @default(false) @map("email_verified")
-  image String?
-  twoFactorEnabled Boolean @default(false) @map("two_factor_enabled")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  sessions Session[]  accounts Account[]  profile MemberProfile?  userRoles UserRole[]
-  @@map("user")
-}
-model Session { id String @id; expiresAt DateTime @map("expires_at"); token String @unique; ipAddress String? @map("ip_address"); userAgent String? @map("user_agent"); userId String @map("user_id"); user User @relation(fields:[userId], references:[id], onDelete: Cascade); createdAt DateTime @default(now()) @map("created_at"); updatedAt DateTime @updatedAt @map("updated_at"); @@map("session") }
-model Account { id String @id; accountId String @map("account_id"); providerId String @map("provider_id"); userId String @map("user_id"); user User @relation(fields:[userId], references:[id], onDelete: Cascade); password String?; accessToken String? @map("access_token"); refreshToken String? @map("refresh_token"); idToken String? @map("id_token"); accessTokenExpiresAt DateTime? @map("access_token_expires_at"); refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at"); scope String?; createdAt DateTime @default(now()) @map("created_at"); updatedAt DateTime @updatedAt @map("updated_at"); @@map("account") }
-model Verification { id String @id; identifier String; value String; expiresAt DateTime @map("expires_at"); createdAt DateTime @default(now()) @map("created_at"); updatedAt DateTime @updatedAt @map("updated_at"); @@map("verification") }
-model TwoFactor { id String @id; secret String; backupCodes String @map("backup_codes"); userId String @map("user_id"); @@map("two_factor") }
+createdAt DateTime @default(now()) @map("created_at")
+updatedAt DateTime @updatedAt @map("updated_at")
+```
+(omitted below for brevity; include them). `enum ProjectKey { mission3011 drishti rcl careerbridge ride }`.
 
+**Identity and RBAC**: `User`, `Session`, `Account`, `Verification`, `TwoFactor` exactly as generated by `npx @better-auth/cli generate` with `@@map` to `user`, `session`, `account`, `verification`, `two_factor`. Then:
+```prisma
 enum MemberStatus { pending approved suspended }
 model MemberProfile {
   id String @id @default(cuid())
-  userId String @unique @map("user_id");  user User @relation(fields:[userId], references:[id], onDelete: Cascade)
-  fullName String @map("full_name")
-  email String @unique              // stored lowercased
-  phone String?
-  rotaryId String? @map("rotary_id")
-  clubId String @map("club_id");   club Club @relation(fields:[clubId], references:[id])
-  photoUrl String? @map("photo_url")
-  bio String?
-  skills String[] @default([])
-  interests String[] @default([])
+  userId String @unique @map("user_id"); user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName String @map("full_name"); email String @unique; phone String?; rotaryId String? @map("rotary_id")
+  clubId String @map("club_id"); club Club @relation(fields: [clubId], references: [id])
+  photoUrl String? @map("photo_url"); bio String?; skills String[] @default([]); interests String[] @default([])
   membershipAnniversary DateTime? @map("membership_anniversary") @db.Date
-  status MemberStatus @default(pending)
-  approvedById String? @map("approved_by_id")
-  approvedAt DateTime? @map("approved_at")
-  rejectionReason String? @map("rejection_reason")
-  qrToken String @unique @default(cuid()) @map("qr_token")
-  directoryOptIn Boolean @default(false) @map("directory_opt_in")
-  isDacMember Boolean @default(false) @map("is_dac_member")
-  legacyProfileId String? @unique @map("legacy_profile_id")
-  themePreference String @default("system") @map("theme_preference")
-  createdAt/updatedAt
-  @@index([clubId]) @@index([status])
-  @@map("member_profiles")
+  status MemberStatus @default(pending); approvedById String? @map("approved_by_id"); approvedAt DateTime? @map("approved_at"); rejectionReason String? @map("rejection_reason")
+  qrToken String @unique @default(cuid()) @map("qr_token"); directoryOptIn Boolean @default(false) @map("directory_opt_in"); isDacMember Boolean @default(false) @map("is_dac_member")
+  themePreference String @default("system") @map("theme_preference"); legacyId String? @unique @map("legacy_id")
+  @@index([clubId]) @@index([status]) @@map("member_profiles")
 }
 enum ScopeType { none club zone project }
-model Role { id String @id @default(cuid()); key String @unique; name String; description String?; isSystem Boolean @default(false) @map("is_system"); scopeType ScopeType @default(none) @map("scope_type"); permissions RolePermission[]; userRoles UserRole[]; createdAt/updatedAt; @@map("roles") }
+model Role { id String @id @default(cuid()); key String @unique; name String; description String?; isSystem Boolean @default(false) @map("is_system"); scopeType ScopeType @default(none) @map("scope_type"); permissions RolePermission[]; userRoles UserRole[]; @@map("roles") }
 model Permission { id String @id @default(cuid()); key String @unique; description String; roles RolePermission[]; @@map("permissions") }
-model RolePermission { roleId String @map("role_id"); permissionId String @map("permission_id"); role Role @relation(...onDelete: Cascade); permission Permission @relation(...onDelete: Cascade); @@id([roleId, permissionId]); @@map("role_permissions") }
-model UserRole { id String @id @default(cuid()); userId String @map("user_id"); roleId String @map("role_id"); scopeType ScopeType @map("scope_type"); scopeId String? @map("scope_id"); grantedById String? @map("granted_by_id"); grantedAt DateTime @default(now()) @map("granted_at"); user User @relation(...onDelete: Cascade); role Role @relation(...onDelete: Cascade); @@unique([userId, roleId, scopeType, scopeId]); @@index([userId]); @@map("user_roles") }
-model AuditLog { id String @id @default(cuid()); actorId String? @map("actor_id"); action String; resourceType String @map("resource_type"); resourceId String? @map("resource_id"); before Json?; after Json?; at DateTime @default(now()); @@index([resourceType, resourceId]); @@index([actorId]); @@map("audit_log") }
-model TrustedDevice { id String @id @default(cuid()); userId String @map("user_id"); tokenHash String @unique @map("token_hash"); userAgent String? @map("user_agent"); expiresAt DateTime @map("expires_at"); createdAt; @@index([userId]); @@map("trusted_devices") }
+model RolePermission { roleId String @map("role_id"); permissionId String @map("permission_id"); role Role @relation(fields: [roleId], references: [id], onDelete: Cascade); permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade); @@id([roleId, permissionId]) @@map("role_permissions") }
+model UserRole { id String @id @default(cuid()); userId String @map("user_id"); roleId String @map("role_id"); scopeType ScopeType @map("scope_type"); scopeId String? @map("scope_id"); grantedById String? @map("granted_by_id"); user User @relation(fields: [userId], references: [id], onDelete: Cascade); role Role @relation(fields: [roleId], references: [id], onDelete: Cascade); @@unique([userId, roleId, scopeType, scopeId]) @@index([userId]) @@index([scopeType, scopeId]) @@map("user_roles") }
+model TrustedDevice { id String @id @default(cuid()); userId String @map("user_id"); tokenHash String @unique @map("token_hash"); userAgent String? @map("user_agent"); expiresAt DateTime @map("expires_at"); @@index([userId]) @@map("trusted_devices") }
+model AuditLog { id String @id @default(cuid()); actorId String? @map("actor_id"); action String; resourceType String @map("resource_type"); resourceId String? @map("resource_id"); before Json?; after Json?; at DateTime @default(now()); @@index([resourceType, resourceId]) @@index([actorId]) @@index([at]) @@map("audit_log") }
 ```
 
-### 3.3 Clubs
-
+**Clubs**
 ```prisma
 model Zone { id String @id @default(cuid()); name String @unique; order Int @default(0); clubs Club[]; @@map("zones") }
-model Club {   // existing columns kept; new columns added
-  id String @id                          // legacy text id, keep
-  name String; shortName String? @map("short_name"); zone String?  // legacy string, keep until phase 14
-  zoneId String? @map("zone_id");  zoneRef Zone? @relation(fields:[zoneId], references:[id])
-  slug String? @unique
+model Club {
+  id String @id
+  name String; shortName String? @map("short_name"); slug String? @unique
+  zone String?  /* legacy string; dropped in step 14 */; zoneId String? @map("zone_id"); zoneRef Zone? @relation(fields: [zoneId], references: [id])
   lat Float?; lng Float?; president String?; isDirector String? @default("") @map("is_director"); phone String?; email String?; rotaryId String? @map("rotary_id"); secretary String?; secretaryEmail String? @map("secretary_email"); secretaryPhone String? @map("secretary_phone"); initiatives Json @default("[]")
-  charterDate DateTime? @map("charter_date") @db.Date; isActive Boolean @default(true) @map("is_active"); meetingInfo String? @map("meeting_info"); socialLinks Json? @map("social_links"); logoUrl String? @map("logo_url")
+  charterDate DateTime? @map("charter_date") @db.Date; isActive Boolean @default(true) @map("is_active"); meetingInfo String? @map("meeting_info"); socialLinks Json? @map("social_links"); logoUrl String? @map("logo_url"); memberCount Int @default(0) @map("member_count")
   createdAt DateTime? @default(now()) @map("created_at"); updatedAt DateTime? @default(now()) @updatedAt @map("updated_at")
-  @@map("clubs")
+  members MemberProfile[]; board ClubBoardMember[]; facts ClubFacts[]; reports Report[]; projectClubs ProjectClub[]
+  @@index([zoneId]) @@map("clubs")
 }
-model ClubBoardMember { id String @id @default(cuid()); clubId String @map("club_id"); memberId String? @map("member_id"); name String; position String; bloodGroup String? @map("blood_group"); phone String?; email String?; ryYear Int @map("ry_year"); order Int @default(0); club Club @relation(...); createdAt/updatedAt; @@index([clubId, ryYear]); @@map("club_board_members") }
+model ClubBoardMember { id String @id @default(cuid()); clubId String @map("club_id"); club Club @relation(fields: [clubId], references: [id]); memberId String? @map("member_id"); name String; position String; bloodGroup String? @map("blood_group"); phone String?; email String?; ryYear Int @map("ry_year"); order Int @default(0); @@index([clubId, ryYear]) @@map("club_board_members") }
 model ClubFacts {
-  id String @id @default(cuid()); clubId String @map("club_id"); ryYear Int @map("ry_year")
-  duesPaidOn DateTime? @map("dues_paid_on") @db.Date
-  riCitationCompleted Boolean @default(false) @map("ri_citation_completed")
-  paulHarrisFellows Int @default(0) @map("paul_harris_fellows")
-  dualMembers Int @default(0) @map("dual_members")
-  mdioCommitteeMembers Int @default(0) @map("mdio_committee_members")
-  mdioEventsAttended Int @default(0) @map("mdio_events_attended")
-  sisterClubSignedOn DateTime? @map("sister_club_signed_on") @db.Date
-  drrVisitOn DateTime? @map("drr_visit_on") @db.Date
-  activeSocialHandles Int @default(0) @map("active_social_handles")
-  clubMerchandise Boolean @default(false) @map("club_merchandise")
-  clubWebsiteUrl String? @map("club_website_url")
-  priorYearMemberCount Int? @map("prior_year_member_count")
-  updatedById String? @map("updated_by_id")
-  club Club @relation(...); createdAt/updatedAt
-  @@unique([clubId, ryYear]); @@map("club_facts")
+  id String @id @default(cuid()); clubId String @map("club_id"); club Club @relation(fields: [clubId], references: [id]); ryYear Int @map("ry_year")
+  duesPaidOn DateTime? @map("dues_paid_on") @db.Date; riCitationCompleted Boolean @default(false) @map("ri_citation_completed"); paulHarrisFellows Int @default(0) @map("paul_harris_fellows"); dualMembers Int @default(0) @map("dual_members"); mdioCommitteeMembers Int @default(0) @map("mdio_committee_members"); mdioEventsAttended Int @default(0) @map("mdio_events_attended"); sisterClubSignedOn DateTime? @map("sister_club_signed_on") @db.Date; drrVisitOn DateTime? @map("drr_visit_on") @db.Date; vocationalCentreOn DateTime? @map("vocational_centre_on") @db.Date; activeSocialHandles Int @default(0) @map("active_social_handles"); clubMerchandise Boolean @default(false) @map("club_merchandise"); clubWebsiteUrl String? @map("club_website_url"); priorYearMemberCount Int? @map("prior_year_member_count"); updatedById String? @map("updated_by_id")
+  @@unique([clubId, ryYear]) @@map("club_facts")
 }
 ```
 
-### 3.4 Content, settings, assets
+**Content, settings, assets, public content**: `ContentBlock`, `Setting`, `AssetLink`, `PastDrr`, `DistrictTeamMember`, `Achievement`, `Partner`, `Publication`, `Resource`, `SisterClubRequest`, `Enquiry`, `PageView` exactly as in Appendix A (unchanged from the previous revision), with `Enquiry` gaining `assignedToId String? @map("assigned_to_id")` and `status String @default("new")` values `new|in_progress|closed`.
 
-```prisma
-enum ContentType { text richtext image link list }
-enum PublishStatus { draft published }
-model ContentBlock { id; pageKey String @map("page_key"); sectionKey String @map("section_key"); type ContentType; draftValue Json @map("draft_value"); publishedValue Json? @map("published_value"); publishedAt DateTime? @map("published_at"); updatedById String? @map("updated_by_id"); createdAt/updatedAt; @@unique([pageKey, sectionKey]); @@map("content_blocks") }
-model Setting { key String @id; value Json; updatedById String? @map("updated_by_id"); updatedAt; @@map("settings") }
-enum LinkStatus { unchecked ok broken private }
-model AssetLink { id; url String; kind String; status LinkStatus @default(unchecked); lastCheckedAt DateTime? @map("last_checked_at"); lastError String? @map("last_error"); ownerUserId String? @map("owner_user_id"); resourceType String @map("resource_type"); resourceId String @map("resource_id"); createdAt/updatedAt; @@unique([resourceType, resourceId, url]); @@index([status]); @@map("asset_links") }
-```
-
-### 3.5 Public content tables
-
-```prisma
-model PastDrr { id; name String; slug String @unique; terms String[]  /* e.g. ["2019-20"] */; homeClubId String? @map("home_club_id"); photoUrl String? @map("photo_url"); bio String?; order Int; isLowResPhoto Boolean @default(false) @map("is_low_res_photo"); createdAt/updatedAt; @@map("past_drrs") }
-enum TeamKind { core dsc }
-model DistrictTeamMember { id; memberId String? @map("member_id"); name String; designation String; kind TeamKind; order Int; photoUrl String? @map("photo_url"); phone String?; email String?; bio String?; clubId String? @map("club_id"); ryYear Int @map("ry_year"); createdAt/updatedAt; @@map("district_team") }
-enum AchievementType { chartered_club award milestone }
-model Achievement { id; type AchievementType; title String; clubId String? @map("club_id"); date DateTime @db.Date; certificateUrl String? @map("certificate_url"); description String?; order Int @default(0); createdAt/updatedAt; @@map("achievements") }
-enum PermissionStatus { pending granted }
-model Partner { id; name String; logoUrl String? @map("logo_url"); tier String; website String?; permissionStatus PermissionStatus @default(pending) @map("permission_status"); order Int @default(0); createdAt/updatedAt; @@map("partners") }
-enum PublicationType { directory newsletter }
-model Publication { id; title String; type PublicationType; url String; month DateTime @db.Date; coverUrl String? @map("cover_url"); createdAt/updatedAt; @@map("publications") }
-enum ResourceCategory { documents forms logos photos guest_kit templates }
-model Resource { id; category ResourceCategory; title String; description String?; url String; isLocked Boolean @default(false) @map("is_locked"); requiredPermission String? @map("required_permission"); comingSoonMonth String? @map("coming_soon_month"); order Int @default(0); createdAt/updatedAt; @@map("resources") }
-model SisterClubRequest { id; clubId String @map("club_id"); partnerClubName String @map("partner_club_name"); partnerDistrict String @map("partner_district"); country String; contactName String @map("contact_name"); contactEmail String @map("contact_email"); status String @default("submitted"); signedOn DateTime? @map("signed_on") @db.Date; submittedById String? @map("submitted_by_id"); createdAt/updatedAt; @@map("sister_club_requests") }
-enum EnquiryKind { new_club sponsor contact }
-model Enquiry { id; kind EnquiryKind; name String; email String; phone String?; organisation String?; message String; payload Json?; routedTo String @map("routed_to"); status String @default("new"); createdAt/updatedAt; @@map("enquiries") }
-model PageView { year Int @id; count BigInt @default(0); @@map("page_views") }
-```
-
-### 3.6 Reporting and points
-
+**Reporting (clean)**
 ```prisma
 enum SchemaStatus { draft active retired }
-model ReportFormSchema { id; version Int @unique; status SchemaStatus @default(draft); publishedAt DateTime? @map("published_at"); createdById String? @map("created_by_id"); fields ReportFormField[]; createdAt/updatedAt; @@map("report_form_schemas") }
+model ReportFormSchema { id String @id @default(cuid()); version Int @unique; status SchemaStatus @default(draft); publishedAt DateTime? @map("published_at"); createdById String? @map("created_by_id"); fields ReportFormField[]; reports Report[]; @@map("report_form_schemas") }
 enum FieldType { text textarea number select multiselect link date boolean clubs }
-model ReportFormField { id; schemaId String @map("schema_id"); section String; fieldKey String @map("field_key"); label String; type FieldType; options Json?; required Boolean @default(false); order Int; helpText String? @map("help_text"); pointSourceKey String? @map("point_source_key"); schema ReportFormSchema @relation(...onDelete: Cascade); @@unique([schemaId, fieldKey]); @@map("report_form_fields") }
+model ReportFormField { id String @id @default(cuid()); schemaId String @map("schema_id"); schema ReportFormSchema @relation(fields: [schemaId], references: [id], onDelete: Cascade); section String; fieldKey String @map("field_key"); label String; type FieldType; options Json?; required Boolean @default(false); order Int; helpText String? @map("help_text"); perActivity Boolean @default(false) @map("per_activity"); pointSourceKey String? @map("point_source_key"); @@unique([schemaId, fieldKey]) @@map("report_form_fields") }
 enum ReportStatus { draft submitted queried scored }
-model MonthlyReport {   // legacy table, extended
-  id String @id @default(uuid()) @db.Uuid
-  month String            // legacy text, keep
-  clubName String @map("club_name"); clubEmail String @map("club_email"); submittedBy String @map("submitted_by")   // legacy, keep
-  status String? @default("reported"); flagComment String? @map("flag_comment"); sectionsJson Json @map("sections_json"); submittedAt DateTime? @default(now()) @map("submitted_at"); flagReason String? @map("flag_reason"); flaggedBy String? @map("flagged_by"); flaggedAt DateTime? @map("flagged_at"); sectionFlags Json? @default("{}") @map("section_flags")
-  clubId String? @map("club_id"); monthDate DateTime? @map("month_date") @db.Date; schemaVersion Int @default(1) @map("schema_version"); status2 ReportStatus @default(submitted) @map("status2"); submittedById String? @map("submitted_by_id"); notes String?; queriedById String? @map("queried_by_id"); queryText String? @map("query_text"); queryReply String? @map("query_reply"); resolvedAt DateTime? @map("resolved_at"); filedOnTime Boolean? @map("filed_on_time")
-  @@unique([clubId, monthDate]); @@map("monthly_reports")
+model Report {
+  id String @id @default(cuid()); clubId String @map("club_id"); club Club @relation(fields: [clubId], references: [id]); ryYear Int @map("ry_year"); month DateTime @db.Date
+  schemaVersion Int @map("schema_version"); schema ReportFormSchema @relation(fields: [schemaVersion], references: [version])
+  status ReportStatus @default(draft); values Json /* { activities: Activity[], ...fieldKey: value } */; notes String?
+  submittedById String? @map("submitted_by_id"); submittedAt DateTime? @map("submitted_at"); filedOnTime Boolean? @map("filed_on_time"); scoredAt DateTime? @map("scored_at"); legacyId String? @unique @map("legacy_id")
+  queries ReportQuery[]
+  @@unique([clubId, month]) @@index([status]) @@index([ryYear, month]) @@map("reports")
 }
-model ReportRequest { id; title String; description String?; questions Json  /* [{key,label,type,required}] */; audience Json /* {roleKeys[],zoneIds[],clubIds[]} */; dueAt DateTime @map("due_at"); createdById String @map("created_by_id"); responses ReportRequestResponse[]; createdAt/updatedAt; @@map("report_requests") }
-model ReportRequestResponse { id; requestId String @map("request_id"); clubId String @map("club_id"); answers Json; submittedById String @map("submitted_by_id"); request ReportRequest @relation(...onDelete: Cascade); createdAt/updatedAt; @@unique([requestId, clubId]); @@map("report_request_responses") }
-model PointCategory { id; key String @unique; name String; order Int; rules PointRule[]; @@map("point_categories") }
-enum RuleType { flat per_unit tiered penalty }
-enum RulePeriod { monthly yearly once }
-enum SourceType { report_field club_fact event_attendance project_collaboration ride_hosting club_events }
-model PointRule { id; categoryId String @map("category_id"); key String @unique; label String; ruleType RuleType @map("rule_type"); period RulePeriod; sourceType SourceType @map("source_type"); sourceKey String @map("source_key"); numeratorKey String? @map("numerator_key"); denominatorKey String? @map("denominator_key"); points Decimal? @db.Decimal(10,2); perUnitCap Int? @map("per_unit_cap"); isActive Boolean @default(true) @map("is_active"); ryYear Int @map("ry_year"); category PointCategory @relation(...); tiers PointRuleTier[]; createdAt/updatedAt; @@map("point_rules") }
-model PointRuleTier { id; ruleId String @map("rule_id"); min Decimal @db.Decimal(10,2); max Decimal? @db.Decimal(10,2); points Decimal @db.Decimal(10,2); rule PointRule @relation(...onDelete: Cascade); @@map("point_rule_tiers") }
-enum EntryKind { computed judged }
-model ClubPointEntry { id; clubId String @map("club_id"); ryYear Int @map("ry_year"); periodKey String @map("period_key")  /* "2026-08" | "2026" | "once" */; ruleId String? @map("rule_id"); categoryId String @map("category_id"); kind EntryKind; points Decimal @db.Decimal(10,2); reason String?; traceJson Json? @map("trace_json"); sourceType String? @map("source_type"); sourceId String? @map("source_id"); createdById String? @map("created_by_id"); createdAt/updatedAt; @@unique([clubId, ruleId, periodKey], map: "club_point_entries_computed_idempotent"); @@index([clubId, ryYear]); @@map("club_point_entries") }
+model ReportQuery { id String @id @default(cuid()); reportId String @map("report_id"); report Report @relation(fields: [reportId], references: [id], onDelete: Cascade); askedById String @map("asked_by_id"); question String; reply String?; repliedById String? @map("replied_by_id"); repliedAt DateTime? @map("replied_at"); @@index([reportId]) @@map("report_queries") }
+model ReportRequest { id String @id @default(cuid()); title String; description String?; questions Json; audience Json; dueAt DateTime @map("due_at"); createdById String @map("created_by_id"); responses ReportRequestResponse[]; @@map("report_requests") }
+model ReportRequestResponse { id String @id @default(cuid()); requestId String @map("request_id"); request ReportRequest @relation(fields: [requestId], references: [id], onDelete: Cascade); clubId String @map("club_id"); answers Json; submittedById String @map("submitted_by_id"); @@unique([requestId, clubId]) @@map("report_request_responses") }
 ```
-Note: the unique index above must be a partial index `WHERE kind='computed'`: Prisma cannot express it, so add it by hand in the migration SQL and remove the generated non-partial one.
 
-### 3.7 Showcase, effort, badges, certificates
+**Points**: `PointCategory`, `PointRule`, `PointRuleTier`, `ClubPointEntry` as in Appendix A, with these locked details: `ClubPointEntry.trace Json? @map("trace")` (renamed from trace_json), partial unique index added by hand in the migration:
+```sql
+DROP INDEX IF EXISTS "club_point_entries_club_id_rule_id_period_key_key";
+CREATE UNIQUE INDEX club_point_entries_computed_idempotent ON club_point_entries (club_id, rule_id, period_key) WHERE kind = 'computed';
+CREATE UNIQUE INDEX club_point_entries_judged_one_per_month ON club_point_entries (club_id, period_key) WHERE kind = 'judged' AND source_type IS NULL;
+```
 
+**Showcase (clean)**
 ```prisma
-enum ShowcaseStatus { draft submitted approved published rejected }
-model ProjectSubmission {   // legacy table, extended; drop any legacy club_name column usage
-  id String @id @default(uuid()) @db.Uuid
-  /* keep every legacy column as-is here */
-  slug String? @unique; title String?; category String?; summary String?; body String?; date DateTime? @db.Date; beneficiaries Int?; photos String[] @default([]); submittedById String? @map("submitted_by_id"); status2 ShowcaseStatus @default(draft) @map("status2"); publishedTitle String? @map("published_title"); publishedSummary String? @map("published_summary"); publishedBody String? @map("published_body"); editorNotes String? @map("editor_notes"); rejectionReason String? @map("rejection_reason"); publishedAt DateTime? @map("published_at"); publishedById String? @map("published_by_id"); consentConfirmed Boolean @default(false) @map("consent_confirmed")
+enum ProjectStatus { draft submitted published rejected }
+model Project {
+  id String @id @default(cuid()); slug String? @unique; title String; category String; date DateTime @db.Date; summary String; body String?; beneficiaries Int?; photos String[] @default([])
+  submittedById String? @map("submitted_by_id"); status ProjectStatus @default(draft); consentConfirmed Boolean @default(false) @map("consent_confirmed"); submittedAt DateTime? @map("submitted_at")
+  publishedTitle String? @map("published_title"); publishedSummary String? @map("published_summary"); publishedBody String? @map("published_body"); editorNotes String? @map("editor_notes"); rejectionReason String? @map("rejection_reason"); publishedAt DateTime? @map("published_at"); publishedById String? @map("published_by_id"); legacyId String? @unique @map("legacy_id")
   clubs ProjectClub[]
-  @@map("project_submissions")
+  @@index([status]) @@index([publishedAt]) @@map("projects")
 }
 enum ProjectClubRole { lead collaborator }
-model ProjectClub { projectId String @map("project_id") @db.Uuid; clubId String @map("club_id"); role ProjectClubRole; project ProjectSubmission @relation(...onDelete: Cascade); club Club @relation(...); @@id([projectId, clubId]); @@map("project_clubs") }
-enum EffortKind { admin self }
-enum ApprovalStatus { pending approved rejected }
-model EffortLog { id; kind EffortKind; memberId String? @map("member_id"); personName String @map("person_name"); clubId String @map("club_id"); taskDescription String @map("task_description"); hours Decimal @db.Decimal(6,2); date DateTime @db.Date; loggedById String @map("logged_by_id"); status ApprovalStatus @default(approved); approvedById String? @map("approved_by_id"); approvedAt DateTime? @map("approved_at"); rejectionReason String? @map("rejection_reason"); pointsAwarded Decimal? @map("points_awarded") @db.Decimal(10,2); pointEntryId String? @map("point_entry_id"); createdAt/updatedAt; @@index([clubId]); @@index([memberId]); @@map("effort_log") }
-model Badge { id; key String @unique; label String; description String; icon String; triggerType String @map("trigger_type"); threshold Int?; @@map("badges") }
-model MemberBadge { memberId String @map("member_id"); badgeId String @map("badge_id"); earnedAt DateTime @default(now()) @map("earned_at"); @@id([memberId, badgeId]); @@map("member_badges") }
-model Certificate { id; memberId String @map("member_id"); kind String; title String; issuedAt DateTime @default(now()) @map("issued_at"); issuedById String? @map("issued_by_id"); data Json; @@index([memberId]); @@map("certificates") }
-model MemberPrivacyAcceptance { memberId String @map("member_id"); policyPublishedAt DateTime @map("policy_published_at"); acceptedAt DateTime @default(now()) @map("accepted_at"); @@id([memberId, policyPublishedAt]); @@map("member_privacy_acceptances") }
-model SkillTag { id; label String @unique; kind String /* skill | interest */; @@map("skill_tags") }
+model ProjectClub { projectId String @map("project_id"); project Project @relation(fields: [projectId], references: [id], onDelete: Cascade); clubId String @map("club_id"); club Club @relation(fields: [clubId], references: [id]); role ProjectClubRole; @@id([projectId, clubId]) @@index([clubId]) @@map("project_clubs") }
 ```
+Exactly one `lead` row per project (enforced in the service and by partial unique index `ON project_clubs (project_id) WHERE role = 'lead'`).
 
-### 3.8 Events, calendar, feedback, comms
+**Effort, badges, certificates, privacy, tags**: `EffortLog`, `Badge`, `MemberBadge`, `Certificate`, `MemberPrivacyAcceptance`, `SkillTag` as in Appendix A.
 
+**Events, calendar, feedback**: `Event`, `EventRsvp`, `EventCheckin`, `DrrBooking`, `DrrBlock`, `Feedback` as in Appendix A. `Event.projectKey ProjectKey? @map("project_key")` added so subdomains can list their own events.
+
+**Announcements (clean)**
 ```prisma
-model Event { id; title String; slug String @unique; startsAt DateTime @map("starts_at"); endsAt DateTime? @map("ends_at"); location String?; description String?; coverUrl String? @map("cover_url"); isDistrictEvent Boolean @default(true) @map("is_district_event"); clubId String? @map("club_id")  /* set for club-logged events */; rsvpOpen Boolean @default(true) @map("rsvp_open"); capacity Int?; photos String[] @default([]); createdById String @map("created_by_id"); rsvps EventRsvp[]; checkins EventCheckin[]; createdAt/updatedAt; @@index([startsAt]); @@map("events") }
-enum RsvpStatus { going maybe not_going }
-model EventRsvp { eventId String @map("event_id"); memberId String @map("member_id"); status RsvpStatus; event Event @relation(...onDelete: Cascade); createdAt/updatedAt; @@id([eventId, memberId]); @@map("event_rsvps") }
-enum CheckinMethod { qr manual walk_in }
-model EventCheckin { id; eventId String @map("event_id"); memberId String? @map("member_id"); walkInName String? @map("walk_in_name"); clubId String @map("club_id"); method CheckinMethod; checkedInAt DateTime @default(now()) @map("checked_in_at"); checkedInById String @map("checked_in_by_id"); event Event @relation(...onDelete: Cascade); @@unique([eventId, memberId]); @@index([eventId, clubId]); @@map("event_checkins") }
-enum BookingPurpose { installation club_event meeting }
-enum BookingStatus { requested held confirmed declined cancelled }
-model DrrBooking { id; reference String @unique; purpose BookingPurpose; clubId String? @map("club_id"); requesterName String @map("requester_name"); requesterEmail String @map("requester_email"); requesterPhone String @map("requester_phone"); startsAt DateTime @map("starts_at"); endsAt DateTime @map("ends_at"); notes String?; status BookingStatus @default(requested); googleEventId String? @map("google_event_id"); decisionReason String? @map("decision_reason"); decidedById String? @map("decided_by_id"); decidedAt DateTime? @map("decided_at"); createdAt/updatedAt; @@index([startsAt]); @@map("drr_bookings") }
-model DrrBlock { id; startsAt DateTime @map("starts_at"); endsAt DateTime @map("ends_at"); reason String?; createdById String @map("created_by_id"); @@map("drr_blocks") }
-model Announcement {   // legacy table extended; keep legacy columns
-  id String @id @default(uuid()) @db.Uuid
-  /* legacy columns kept */
-  title2 String? @map("title2"); body String?; audience Json? /* {roleKeys[],zoneIds[],clubIds[],memberIds[]} */; channels String[] @default([]); sendAt DateTime? @map("send_at"); sentAt DateTime? @map("sent_at"); recipientCount Int? @map("recipient_count"); createdById String? @map("created_by_id"); reads AnnouncementRead[]
-  @@map("announcements")
-}
-model AnnouncementRead { announcementId String @map("announcement_id") @db.Uuid; userId String @map("user_id"); readAt DateTime @default(now()) @map("read_at"); announcement Announcement @relation(...onDelete: Cascade); @@id([announcementId, userId]); @@map("announcement_reads") }
-enum FeedbackStatus { open reviewed closed }
-model Feedback { id; submittedById String? @map("submitted_by_id"); clubId String? @map("club_id"); category String; message String; eventId String? @map("event_id"); status FeedbackStatus @default(open); reply String?; reviewedById String? @map("reviewed_by_id"); reviewedAt DateTime? @map("reviewed_at"); createdAt/updatedAt; @@index([status]); @@map("feedback") }
-enum Channel { email push }
-enum OutboxStatus { queued sent failed }
-model NotificationOutbox { id; channel Channel; toUserId String? @map("to_user_id"); toAddress String @map("to_address"); template String; subject String?; payload Json; status OutboxStatus @default(queued); provider String?; attempts Int @default(0); lastError String? @map("last_error"); sentAt DateTime? @map("sent_at"); createdAt/updatedAt; @@index([status]); @@map("notification_outbox") }
-model EmailProviderUsage { provider String; day DateTime @db.Date; count Int @default(0); @@id([provider, day]); @@map("email_provider_usage") }
-model PushSubscription { id; userId String @map("user_id"); endpoint String @unique; p256dh String; auth String; userAgent String? @map("user_agent"); createdAt/updatedAt; @@index([userId]); @@map("push_subscriptions") }
+model Announcement { id String @id @default(cuid()); title String; body String; audience Json; channels String[] @default(["portal"]); sendAt DateTime? @map("send_at"); sentAt DateTime? @map("sent_at"); recipientCount Int? @map("recipient_count"); createdById String @map("created_by_id"); legacyId String? @unique @map("legacy_id"); reads AnnouncementRead[]; @@index([sentAt]) @@map("announcements") }
+model AnnouncementRead { announcementId String @map("announcement_id"); announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade); userId String @map("user_id"); readAt DateTime @default(now()) @map("read_at"); @@id([announcementId, userId]) @@map("announcement_reads") }
 ```
+`NotificationOutbox`, `EmailProviderUsage`, `PushSubscription` as in Appendix A.
 
-### 3.9 Subdomains
+**Subdomains**: as in Appendix A, with `M3011Camp`, `DrishtiBeneficiary`, `RclTeam`, `CbListing`, `RideSupportClub`, `RideDelegation` each additionally indexed on their `status`/`stage` column; `RideDelegationHost` also `@@index([clubId])`.
 
-```prisma
-enum CampStatus { submitted approved rejected }
-model M3011Camp { id; leadClubId String @map("lead_club_id"); date DateTime @db.Date; venue String; city String?; unitsCollected Int @map("units_collected"); donorsRegistered Int? @map("donors_registered"); partnerBloodBank String? @map("partner_blood_bank"); photos String[] @default([]); status CampStatus @default(submitted); submittedById String @map("submitted_by_id"); reviewedById String? @map("reviewed_by_id"); reviewedAt DateTime? @map("reviewed_at"); rejectionReason String? @map("rejection_reason"); clubs M3011CampClub[]; createdAt/updatedAt; @@index([status]); @@map("m3011_camps") }
-model M3011CampClub { campId String @map("camp_id"); clubId String @map("club_id"); camp M3011Camp @relation(...onDelete: Cascade); @@id([campId, clubId]); @@map("m3011_camp_clubs") }
-enum DrishtiStage { screened scheduled operated followup closed }
-model DrishtiBeneficiary { id; clubId String @map("club_id"); name String; age Int?; gender String?; phoneEncrypted String? @map("phone_encrypted"); eye String /* left|right|both */; screenedOn DateTime @map("screened_on") @db.Date; campLocation String? @map("camp_location"); stage DrishtiStage @default(screened); notes String?; createdById String @map("created_by_id"); surgeries DrishtiSurgery[]; createdAt/updatedAt; @@index([clubId]); @@index([stage]); @@map("drishti_beneficiaries") }
-model DrishtiSurgery { id; beneficiaryId String @map("beneficiary_id"); hospital String; operatedOn DateTime @map("operated_on") @db.Date; outcome String?; followupOn DateTime? @map("followup_on") @db.Date; beneficiary DrishtiBeneficiary @relation(...onDelete: Cascade); createdAt/updatedAt; @@map("drishti_surgeries") }
-enum TeamStatus { registered confirmed withdrawn }
-model RclTeam { id; season Int; clubId String @map("club_id"); name String; captainName String @map("captain_name"); captainPhone String @map("captain_phone"); status TeamStatus @default(registered); players RclPlayer[]; createdById String @map("created_by_id"); createdAt/updatedAt; @@unique([season, clubId]); @@map("rcl_teams") }
-model RclPlayer { id; teamId String @map("team_id"); memberId String? @map("member_id"); name String; role String?; team RclTeam @relation(...onDelete: Cascade); @@map("rcl_players") }
-enum FixtureStatus { scheduled completed abandoned }
-model RclFixture { id; season Int; homeTeamId String @map("home_team_id"); awayTeamId String @map("away_team_id"); scheduledAt DateTime @map("scheduled_at"); venue String?; status FixtureStatus @default(scheduled); result RclResult?; createdAt/updatedAt; @@map("rcl_fixtures") }
-model RclResult { fixtureId String @id @map("fixture_id"); homeRuns Int @map("home_runs"); homeWickets Int @map("home_wickets"); homeOvers Decimal @map("home_overs") @db.Decimal(4,1); awayRuns Int @map("away_runs"); awayWickets Int @map("away_wickets"); awayOvers Decimal @map("away_overs") @db.Decimal(4,1); winnerTeamId String? @map("winner_team_id"); notes String?; enteredById String @map("entered_by_id"); fixture RclFixture @relation(...onDelete: Cascade); createdAt/updatedAt; @@map("rcl_results") }
-enum ListingType { job internship mentorship }
-enum ListingStatus { pending_email pending verified filled expired rejected }
-model CbListing { id; title String; company String; type ListingType; location String; mode String /* onsite|remote|hybrid */; stipend String?; description String; applyUrl String? @map("apply_url"); contactEmail String @map("contact_email"); postedByName String @map("posted_by_name"); postedByEmail String @map("posted_by_email"); rotaryAffiliation String? @map("rotary_affiliation"); status ListingStatus @default(pending_email); verifyToken String? @unique @map("verify_token"); verifiedById String? @map("verified_by_id"); verifiedAt DateTime? @map("verified_at"); filledAt DateTime? @map("filled_at"); expiresAt DateTime? @map("expires_at"); rejectionReason String? @map("rejection_reason"); createdAt/updatedAt; @@index([status]); @@map("cb_listings") }
-model RideSupportClub { id; ryYear Int @map("ry_year"); clubId String @map("club_id"); capacityDelegates Int @map("capacity_delegates"); homestayAvailable Boolean @map("homestay_available"); preferredMonths Int[] @map("preferred_months"); contactMemberId String? @map("contact_member_id"); contactPhone String @map("contact_phone"); notes String?; createdById String @map("created_by_id"); createdAt/updatedAt; @@unique([ryYear, clubId]); @@map("ride_support_clubs") }
-enum DelegationStatus { planned confirmed completed cancelled }
-model RideDelegation { id; ryYear Int @map("ry_year"); visitingDistrict String @map("visiting_district"); country String; startsAt DateTime @map("starts_at") @db.Date; endsAt DateTime @map("ends_at") @db.Date; headcount Int; contactName String @map("contact_name"); contactEmail String? @map("contact_email"); status DelegationStatus @default(planned); hosts RideDelegationHost[]; createdAt/updatedAt; @@map("ride_delegations") }
-model RideDelegationHost { id; delegationId String @map("delegation_id"); clubId String @map("club_id"); daysHosted Int @map("days_hosted"); membersSent Int @default(0) @map("members_sent"); assignedById String @map("assigned_by_id"); delegation RideDelegation @relation(...onDelete: Cascade); createdAt/updatedAt; @@unique([delegationId, clubId]); @@map("ride_delegation_hosts") }
-model RideGalleryItem { id; year Int; url String; kind String /* photo|video */; caption String?; order Int @default(0); createdAt/updatedAt; @@map("ride_gallery_items") }
-```
+### 3.4 Legacy data migration (`scripts/migrate-legacy.ts`)
+- `legacy_user_profiles` → `user` + `account` + `member_profiles` + `user_roles` (mapping in §4.2), `legacy_id` set.
+- `legacy_monthly_reports` → `reports`: `club_id` resolved by `club_email` → `clubs.email` then `club_name` → `clubs.name`/`short_name`; `month` parsed from text like "August 2026" to `2026-08-01`; `schema_version = 1`; `values = { legacySections: sections_json }`; `status = submitted` (or `queried` when `flag_reason` present, with a `report_queries` row from `flag_reason`/`flag_comment`); `submitted_at` kept.
+- `legacy_project_submissions` → `projects` + one `project_clubs` lead row; `legacy_announcements` → `announcements` with `audience = {roleKeys:['member']}`.
+- Unresolved club matches are written to `scripts/out/unmatched-*.csv` and the run exits non-zero until resolved by an explicit mapping file `scripts/club-aliases.json`.
 
 ---
 
@@ -416,83 +346,83 @@ Returns `{ user: {id, name, email, twoFactorEnabled}, profile: MemberProfileDto 
 
 ---
 
-## 5. API catalogue
+## 5. API design (locked)
 
-Conventions: JSON; ids in paths; list endpoints accept `?page=1&pageSize=25` and return `{ items, total, page, pageSize }`; every DTO is a Zod schema in `dto/` with `createZodDto`; errors `{ statusCode, error, message }`; 404 when the resource exists but is out of scope (do not leak existence). Unauthenticated public routes live under `/public/*` and set `Cache-Control: public, s-maxage=60, stale-while-revalidate=300` unless stated.
+### 5.1 Conventions
 
-### 5.1 Public (no auth)
-- `GET /public/home` → `{ hero: ContentValue, stats: {zones, focusAreas, foundedYear, ageRange}, flagship: FlagshipCard[5], showcaseTeaser: ShowcaseCard[4], visits: number }`
-- `POST /public/visits` (throttle 1/min/IP) → increments `page_views[currentYear]`, returns `{ count }` (no cache)
-- `GET /public/clubs?zone=` → `{ items: ClubCard[] }` (id, name, shortName, slug, zone, lat, lng, president, phone, email, initiativesCount, memberCount, projectsThisYear)
-- `GET /public/clubs/:slug` → club + board (current ryYear) + published projects
-- `GET /public/showcase?category=&club=&page=` → published projects, `GET /public/showcase/:slug`, `GET /public/showcase/clubs/:clubSlug`
-- `GET /public/heritage`, `GET /public/heritage/:slug`
-- `GET /public/leadership` → `{ core: TeamMember[], dsc: TeamMember[], clubs: {slug,name,president,secretary}[] }`; `GET /public/leadership/clubs/:slug` → board with blood groups
-- `GET /public/initiatives` → for each project key `{ key, active, leadClub: ClubCard|null, summary: ProjectSummary|null, summaryAt: ISO|null, unreachable: boolean }` (summary from the subdomain module's `summary()`; if it throws, return last cached value from `settings` key `summary_cache:<key>` with its timestamp and `unreachable: true`)
-- `GET /public/resources` → grouped by category; locked rows included with `isLocked: true` and no `url`
-- `GET /public/publications`, `GET /public/achievements`, `GET /public/partners` (pending permission → `logoUrl: null`)
-- `GET /public/events?from=&to=` (district events), `GET /public/events/:slug`, `GET /public/events/:slug.ics`, `GET /public/calendar.ics` (all district events of current RY)
-- `GET /public/content/:pageKey` → published blocks map `{ [sectionKey]: value }`
-- `POST /public/enquiries` `{ kind, name, email, phone?, organisation?, message, payload? }` (throttle 5/hour/IP; honeypot field `website` must be empty) → routes to the person in settings `enquiry_routing.<kind>` and notifies them
-- `GET /public/drr-calendar/availability?month=YYYY-MM` → `{ slots: {startsAt, endsAt}[], status: 'ok'|'unreachable' }`
-- `POST /public/drr-calendar/bookings` (throttle 3/hour/IP) → `{ reference, status:'requested' }`; `GET /public/drr-calendar/bookings/:reference`
-- `GET /public/subdomains/:key/summary` → project summary (each §10 module implements `summary()`)
-- Career Bridge public: `GET /public/careerbridge/listings?type=&mode=&q=`, `GET /public/careerbridge/listings/:id`, `POST /public/careerbridge/listings` (creates `pending_email`, sends verify link), `GET /public/careerbridge/verify/:token` (→ `pending`)
-- RIDE public: `GET /public/ride/delegations`, `GET /public/ride/gallery?year=`
-- RCL public: `GET /public/rcl/standings?season=`, `GET /public/rcl/fixtures?season=`
-- Mission 3011 / Drishti public dashboards: `GET /public/mission3011/dashboard`, `GET /public/drishti/dashboard`
+1. **Resources are nouns, plural, at most two levels deep** (`/clubs/:clubId/facts`). No verbs in paths. Actions are state changes expressed as `PATCH` on the resource with the fields that change; the service validates the transition. Example: submitting a report is `PATCH /reports/:id { status: 'submitted' }`, not `POST /reports/:id/submit`.
+2. **One list route per resource** with filtering, sorting and paging via query params: `?filter[status]=submitted&filter[clubId]=…&sort=-submittedAt&page=1&pageSize=25&q=`. Response `{ items, total, page, pageSize }`. Scope filtering is applied automatically from the caller's grants; clients never pass scope for security, only for narrowing.
+3. **Field selection via `include`**: `?include=clubs,queries` adds related sub-objects; default responses are shallow. This replaces most `/x/:id/subthing` GET routes.
+4. **Public read = same resource, different prefix**: `/public/<resource>` routes are unauthenticated, return only published/approved rows and only public fields, and set `Cache-Control`. They share repositories with the authenticated routes; the public controller applies a `publicView` transformer.
+5. **Bulk and estimate operations are `POST` on a collection-level sub-resource** that is not a stored entity: `POST /members/imports` (creates an import job resource), `POST /announcements/estimates`.
+6. **Errors**: `400` validation `{ statusCode, error:'ValidationError', details:[{path, message}] }`, `401`, `403` (permission missing), `404` (missing or out of scope), `409` (state/uniqueness conflict, `code` field: `PRIVACY_NOT_ACCEPTED`, `ALREADY_EXISTS`, `INVALID_TRANSITION`, `CAPACITY_FULL`, `SLOT_TAKEN`), `429`.
+7. **Versioning**: none in the path. Breaking changes are made by adding fields; removing a field requires a deprecation note in `docs/api-changes.md` and a two-release window.
+8. **Idempotency**: `PUT` for full replacement of owned sub-collections (`PUT /clubs/:id/board`, `PUT /ride/delegations/:id/hosts`). `PATCH` is partial and idempotent for state fields.
+9. **Route ownership**: exactly one controller per resource. When a feature needs a new capability on an existing resource, add a field or an `include` to the existing route; add a new route only for a new resource. Before adding any route, check the table below.
 
-### 5.2 Members (`/members`, `/me`)
-- `POST /members/register` (no auth) `{ fullName, email, phone, clubId, password }` → creates user + profile pending → 201; sends `member-registered` to club president/secretary
-- `GET /me`, `PATCH /me/profile` (profile:edit) `{ phone?, photoUrl?, bio?, skills?, interests?, membershipAnniversary?, directoryOptIn?, themePreference? }` (setting `directoryOptIn=true` requires a current privacy acceptance, else 409 `PRIVACY_NOT_ACCEPTED`)
-- `POST /me/privacy-acceptance` → records acceptance of `content_blocks(privacy-policy).publishedAt`
-- `GET /me/qr.svg`, `GET /me/card` → `{ profile, milestones: Milestone[], badges, certificates }`
-- `GET /me/club` → roster (approved members, public fields), board, published projects, report statuses, announcements
-- `GET /me/points` (only if caller holds president/secretary/member of that club) → `{ ryYear, total, byMonth: {month, computed, judged}[], byCategory: {category, points}[] }`
-- `GET /members?clubId=&status=&q=` (members:view, scope filter), `POST /members/:id/approve`, `POST /members/:id/reject {reason}`, `POST /members/:id/suspend`, `GET /members/pending`
-- `POST /members/import/preview` (members:import) multipart CSV → `{ rows: {row, email, fullName, clubId, action:'create'|'link'|'skip', reason?}[] }`; `POST /members/import/commit` `{ rows }` → `{ created, linked, skipped }`
-- `GET /directory?q=&skill=&interest=&clubId=&zoneId=` (directory:view; caller must have privacy acceptance) → opted-in approved members, public fields only
-- `GET /skill-tags`
+Standard verbs per resource: `GET /r`, `POST /r`, `GET /r/:id`, `PATCH /r/:id`, `DELETE /r/:id` (only where listed as allowed).
 
-### 5.3 RBAC admin (`/rbac`, roles:manage)
-`GET /rbac/roles`, `POST /rbac/roles {key,name,description,scopeType,permissionKeys[]}`, `PATCH /rbac/roles/:id`, `DELETE /rbac/roles/:id` (409 if isSystem or has holders), `GET /rbac/permissions`, `GET /rbac/user-roles?userId=`, `POST /rbac/user-roles {userId, roleKey, scopeType, scopeId}`, `DELETE /rbac/user-roles/:id`. `GET /audit?resourceType=&resourceId=&page=` (audit:view).
+### 5.2 Route catalogue
 
-### 5.4 Clubs (`/clubs`)
-`GET /clubs` (auth; all clubs, light), `GET /clubs/:id` (clubs:view scope), `PATCH /clubs/:id` (clubs:edit scope) `{ meetingInfo?, socialLinks?, logoUrl?, phone?, email? }`, `GET /clubs/:id/board?ryYear=`, `PUT /clubs/:id/board` (clubs:edit) `{ members: BoardMemberInput[] }`, `GET /clubs/:id/facts?ryYear=` (club_facts:edit or own club read), `PATCH /clubs/:id/facts` (club_facts:edit; audited; triggers `PointsEngine.recompute({clubId, ryYear, trigger:'club_fact'})`), `GET /zones`.
+Permissions in brackets; `own` = caller must be in scope of the row's `club_id`/`project_key`; `s` = scope filter applied to list.
 
-### 5.5 Content & settings
-`GET /content/blocks?pageKey=` (content:edit) → drafts + published; `PUT /content/blocks/:pageKey/:sectionKey` `{ type, value }` (content:edit; image/link values are link-checked synchronously, response includes `linkStatus`); `POST /content/blocks/:pageKey/:sectionKey/publish` (content:publish; audited); `GET /settings` (settings:manage), `PUT /settings/:key` (settings:manage; audited; validated per key by `SettingsSchema` §8.3; setting `subdomain.<key>.leadClubId` grants `project_admin` scoped to that project to that club's president/secretary user_roles and revokes it from the previous lead club).
-Admin CRUD (public_content:manage, audited on write): `/admin/achievements`, `/admin/partners`, `/admin/publications`, `/admin/resources`, `/admin/past-drrs`, `/admin/district-team`: each `GET`, `POST`, `PATCH /:id`, `DELETE /:id`, plus `POST /admin/<x>/reorder { ids[] }`. `GET /admin/link-health?status=` , `POST /admin/link-health/:id/recheck`.
+| Resource | Routes | Notes |
+|---|---|---|
+| auth | `/auth/*` (Better Auth), `POST /auth/second-factor` `{method, code, rememberDevice}`, `POST /auth/second-factor/resend`, `GET/DELETE /auth/trusted-devices[/:id]` | |
+| me | `GET /me`, `PATCH /me` `{profile fields, themePreference, directoryOptIn}`, `GET /me/qr.svg`, `GET /me/card`, `GET /me/club`, `GET /me/points`, `POST /me/privacy-acceptances` | `/me/*` are views of the caller's own member row; `/me/points` = `/clubs/:ownClubId/points` |
+| members | `GET /members` [members:view, s] filters `status, clubId, q`; `POST /members` (no auth = self-registration; or [members:approve] to create approved directly); `GET/PATCH /members/:id` [members:approve, own] PATCH `{status:'approved'|'suspended'|'rejected', rejectionReason}`; `POST /members/:id/certificates` [members:approve, own]; `POST /members/:id/badges` [reports:score] `{badgeKey}` | approve/reject/suspend are one PATCH |
+| member imports | `POST /members/imports` (multipart CSV) [members:import] → import resource `{id, rows[], status:'previewed'}`; `PATCH /members/imports/:id {status:'committed', rows?}` → result | preview and commit on one resource |
+| directory | `GET /directory` [directory:view] filters `q, skill, interest, clubId, zoneId` | 409 PRIVACY_NOT_ACCEPTED |
+| skill tags | `GET /skill-tags` | |
+| roles | `GET/POST /roles`, `GET/PATCH/DELETE /roles/:id` [roles:manage]; `GET /permissions` | PATCH replaces `permissionKeys` |
+| user roles | `GET /user-roles?filter[userId]=` , `POST /user-roles`, `DELETE /user-roles/:id` [roles:manage] | |
+| audit | `GET /audit` [audit:view] filters `resourceType, resourceId, actorId, from, to` | |
+| zones | `GET /zones` | |
+| clubs | `GET /clubs` (auth) filters `zoneId, q`, `include=board,facts,summary`; `GET /clubs/:id` [clubs:view, own]; `PATCH /clubs/:id` [clubs:edit, own]; `PUT /clubs/:id/board` [clubs:edit, own]; `GET/PATCH /clubs/:id/facts?ryYear=` [read: own club or reports:review; PATCH: club_facts:edit]; `GET /clubs/:id/points?ryYear=&month=` [own club member, or reports:review] → totals, per-month, per-category, and for a given `month` the full computed trace + judged entry; `PATCH /clubs/:id/points?month=` [reports:score] `{judgedPoints, reason}` or `{judgedPoints:null}` to remove | points live under club, no separate `/points/clubs` |
+| content blocks | `GET /content-blocks?filter[pageKey]=` [content:edit]; `PATCH /content-blocks/:pageKey/:sectionKey` [content:edit] `{type?, draftValue?, publish?:true}` (publish requires content:publish) | one route for edit and publish |
+| settings | `GET /settings` [settings:manage]; `PATCH /settings` [settings:manage] `{ [key]: value }` | bulk patch |
+| asset links | `GET /asset-links?filter[status]=` [content:edit]; `PATCH /asset-links/:id {recheck:true}` | |
+| public content admin | `GET/POST /achievements`, `/partners`, `/publications`, `/resources`, `/past-drrs`, `/district-team`, `/enquiries`, `/sister-club-requests` and `GET/PATCH/DELETE …/:id` [public_content:manage; enquiries PATCH `{status, assignedToId}`; sister-club POST by any president/secretary]; `PATCH` accepts `order` for reordering | |
+| report schemas | `GET /report-schemas` [reports:submit → active only; requests:manage → all]; `POST /report-schemas` [requests:manage] (clones active into a draft); `PATCH /report-schemas/:version` [requests:manage] `{fields?, status:'active'}` | publish = PATCH status |
+| reports | `GET /reports` [reports:submit own / reports:review s] filters `clubId, ryYear, month, status`, `include=queries,club,points`; `POST /reports` `{clubId, month}` → draft (409 if exists); `GET /reports/:id`; `PATCH /reports/:id` [reports:submit, own] `{values?, notes?, status?:'submitted'}` ; `GET /reports/:id/assist` [reports:score] | overview screen = `GET /reports?month=&include=club,points` |
+| report queries | `POST /reports/:id/queries` [reports:review, own] `{question}` → report status queried; `PATCH /reports/:id/queries/:queryId` [reports:submit, own] `{reply}` → report status submitted | |
+| report requests | `GET/POST /report-requests` [requests:manage; GET also reports:submit for open ones]; `GET/PATCH/DELETE /report-requests/:id`; `PUT /report-requests/:id/responses/:clubId` [reports:submit, own] `{answers}` | |
+| point categories | `GET /point-categories` | |
+| point rules | `GET /point-rules?ryYear=`; `POST /point-rules`, `PATCH /point-rules/:id` `{…fields, tiers?, isActive?}` [point_rules:manage] | tiers replaced inline |
+| projects (showcase) | `GET /projects` [showcase:submit → own submissions; showcase:publish → queue, s] filters `status, clubId, category`, `include=clubs`; `POST /projects` [showcase:submit]; `GET /projects/:id`; `PATCH /projects/:id` [owner: content fields + `status:'submitted'`; showcase:publish: `publishedTitle/Summary/Body, editorNotes, status:'published'|'rejected', rejectionReason`]; `DELETE /projects/:id` (owner, draft only) | |
+| effort | `GET /effort-entries` [effort:log all / effort:approve s / own for kind self] filters `clubId, status, memberId, kind`; `POST /effort-entries` [effort:log → approved admin entry; any member → kind self pending]; `PATCH /effort-entries/:id` [effort:approve, own] `{status:'approved'|'rejected', rejectionReason}` or [reports:score] `{pointsAwarded, reason}` | contributions = same resource with `kind=self` |
+| badges, certificates | `GET /badges`; `GET /me/badges`; `GET /me/certificates`; `GET /certificates/:id.pdf` (owner or own-club officer) | |
+| events | `GET /events` filters `from, to, clubId, isDistrictEvent, projectKey`, `include=rsvp,attendance`; `POST /events` [events:manage, or club_events:log with own clubId and isDistrictEvent=false]; `GET/PATCH/DELETE /events/:id` [same]; `PUT /events/:id/rsvp` `{status}` (member); `GET /events/:id/checkins` [events:checkin]; `POST /events/:id/checkins` [events:checkin] `{qrToken|memberId|walkInName+clubId}` | attendance per club = `include=attendance` |
+| feedback | `GET /feedback` [feedback:review all / own submissions] filters `status, eventId`; `POST /feedback` [feedback:submit]; `PATCH /feedback/:id` [feedback:review] `{status, reply}` | |
+| announcements | `GET /announcements` (feed for caller; `filter[sent]=true` for senders' history) ; `POST /announcements` [announcements:send, audience within scope unless announcements:send_all]; `GET /announcements/:id`; `PATCH /announcements/:id` `{readAt:'now'}` (marks read for caller) or `{sendAt}` (reschedule before sent); `POST /announcements/estimates` `{audience}` → `{count, byChannel}` | read = PATCH |
+| push | `GET /push/vapid-key`; `POST /push-subscriptions`; `DELETE /push-subscriptions/:endpoint` | |
+| drr bookings | `GET /drr-bookings` [drr_calendar:manage] filters `status, from, to`; `PATCH /drr-bookings/:id` `{status:'confirmed'|'declined', decisionReason}`; `GET/POST/DELETE /drr-blocks[/:id]`; `GET /drr-calendar/status` | |
+| mission3011 | `GET /mission3011/camps` [auth] filters `status, clubId`; `POST /mission3011/camps` (president/secretary); `GET/PATCH /mission3011/camps/:id` [owner edits while submitted; subdomain:mission3011:manage `{status:'approved'|'rejected', rejectionReason}`] | |
+| drishti | `GET/POST /drishti/beneficiaries` [subdomain:drishti:manage, or president/secretary create for own club]; `GET/PATCH /drishti/beneficiaries/:id` `{stage, surgery?:{hospital, operatedOn, outcome}}` | |
+| rcl | `GET/POST /rcl/teams`, `GET/PATCH /rcl/teams/:id` (roster inline `players[]`); `GET/POST /rcl/fixtures`, `PATCH /rcl/fixtures/:id` `{scheduledAt?, venue?, status?, result?}` [subdomain:rcl:manage] | result is a field of fixture |
+| careerbridge | `GET /careerbridge/listings` [subdomain:careerbridge:manage] filters `status`; `PATCH /careerbridge/listings/:id` `{status:'verified'|'rejected'|'filled'|'expired', rejectionReason}` | posting is public (below) |
+| ride | `GET/POST /ride/support-clubs`, `PATCH /ride/support-clubs/:id` (own club); `GET/POST /ride/delegations`, `GET/PATCH/DELETE /ride/delegations/:id` [subdomain:ride:manage]; `PUT /ride/delegations/:id/hosts` `{hosts[]}`; `GET/POST/DELETE /ride/gallery-items[/:id]` | |
+| health | `GET /health`, `GET /ready` | |
 
-### 5.6 Reports (`/reports`)
-- `GET /reports/schema/active`, `GET /reports/schema` (requests:manage), `POST /reports/schema/draft` (clone active → new draft version), `PUT /reports/schema/:version/fields { fields[] }` (draft only), `POST /reports/schema/:version/publish` (sets active, retires previous; audited)
-- `GET /reports/mine?ryYear=` (reports:submit; scope) ; `GET /reports/:id`
-- `PUT /reports/drafts/:clubId/:month` `{ values: Record<fieldKey, unknown>, notes? }` (reports:submit; scope; upsert status draft) ; `POST /reports/:id/submit` → validates against schema (required, types; `clubs` fields must be existing club ids) → status submitted, `filedOnTime = submittedAt <= deadline` where deadline = settings `report.deadlineDay` of following month; emits `report.submitted`
-- `POST /reports/:id/query { text }` (reports:review; scope) → status queried, notify submitter; `POST /reports/:id/reply { text }` (reports:submit; submitter club) → status submitted, notify querier
-- `GET /reports/overview?month=&zoneId=` (reports:review) → per club: `filed|not_filed|queried|scored`, computed/judged totals
-- `GET /reports/:id/assist` (reports:score) → `{ suggestions: {fieldKey, suggestion, evidence}[], summary }` from Anthropic (model env `ANTHROPIC_MODEL` default `claude-sonnet-5`), input = the report's `notes` + values; nothing persisted
-- Ad-hoc: `GET/POST /requests` (requests:manage), `GET /requests/open` (reports:submit), `PUT /requests/:id/responses/:clubId { answers }`
+### 5.3 Public routes (no auth, cached 60s unless noted)
 
-### 5.7 Points (`/points`)
-`GET /points/categories`; `GET /points/rules?ryYear=` ; `POST /points/rules`, `PATCH /points/rules/:id`, `PUT /points/rules/:id/tiers { tiers[] }`, `POST /points/rules/:id/deactivate` (point_rules:manage; audited; enqueue `points.recompute-all {ryYear}`); `GET /points/clubs/:clubId/months/:month` (reports:score or reports:review; scope) → `{ computed: {categoryKey, subtotal, entries: Trace[]}[], judged: {points, reason, by, at}|null, report: {id,status} }`; `PUT /points/clubs/:clubId/months/:month/judged { points, reason }` (reports:score; reason min 10 chars; audited; sets report status scored); `DELETE` same path; `GET /points/clubs/:clubId/trend?ryYear=` (scope; own club for president/secretary/member); `GET /points/officer-dashboard?ryYear=&month=` (reports:review) → clubs behind threshold, filed %, top categories, queue counts.
+| Route | Returns |
+|---|---|
+| `GET /public/home` | hero blocks, stats, flagship cards, 4 latest published projects, visits |
+| `POST /public/visits` | increments year counter (no cache, 1/min/IP) |
+| `GET /public/clubs?zoneId=` , `GET /public/clubs/:slug?include=board,projects` | club cards / club page |
+| `GET /public/projects?category=&clubSlug=&page=` , `GET /public/projects/:slug` | published projects only, published copy |
+| `GET /public/past-drrs[/:slug]` , `GET /public/district-team` , `GET /public/achievements` , `GET /public/partners` , `GET /public/publications` , `GET /public/resources` | as named; locked resources without `url`; pending partners without `logoUrl` |
+| `GET /public/content/:pageKey` | published blocks |
+| `GET /public/initiatives` | five project cards with active/lead/summary/unreachable |
+| `GET /public/events?from=&to=` , `GET /public/events/:slug` , `GET /public/events/:slug.ics` , `GET /public/calendar.ics` | district events |
+| `GET /public/drr-availability?month=` , `POST /public/drr-bookings` (3/h/IP) , `GET /public/drr-bookings/:reference` | booking flow |
+| `POST /public/enquiries` (5/h/IP, honeypot) | new club / sponsor / contact |
+| `GET /public/projects-summary/:key` | one subdomain summary (also used by `/public/initiatives`) |
+| `GET /public/mission3011/dashboard` , `GET /public/drishti/dashboard` , `GET /public/rcl/standings?season=` , `GET /public/rcl/fixtures?season=` , `GET /public/ride/delegations` , `GET /public/ride/gallery?year=` | subdomain public pages |
+| `GET /public/careerbridge/listings?type=&mode=&q=` , `GET /public/careerbridge/listings/:id` , `POST /public/careerbridge/listings` , `PATCH /public/careerbridge/listings/:id` `{verifyToken}` | listing board; PATCH with token = email verification |
 
-### 5.8 Showcase (`/showcase`)
-`GET /showcase/mine`, `PUT /showcase/drafts/:id?` (showcase:submit) `{ title, category, date, summary, body, photos[], beneficiaries?, collaboratorClubIds[], consentConfirmed }`, `POST /showcase/:id/submit` (requires consentConfirmed; notifies club president/secretary), `GET /showcase/queue?status=` (showcase:publish; scope by lead club), `PATCH /showcase/:id/published-copy { publishedTitle, publishedSummary, publishedBody, editorNotes }`, `POST /showcase/:id/publish` (audited; sets slug; emits `showcase.published`; triggers recompute for lead club with trigger `project_collaboration`), `POST /showcase/:id/reject { reason }`.
-
-### 5.9 Effort, badges, certificates
-`GET /effort?clubId=&status=` (effort:log or effort:approve scope), `POST /effort` (effort:log) `{ personName, memberId?, clubId, taskDescription, hours, date }` → approved; `POST /me/contributions` (any member) → kind self, status pending; `GET /me/contributions`; `POST /effort/:id/approve|reject` (effort:approve; scope); `PUT /effort/:id/points { points, reason? }` (reports:score; creates/updates judged `club_point_entries` with `sourceType:'effort'`, `sourceId`, `periodKey = YYYY-MM of date`, reason `Effort log: <taskDescription>` + optional reason; audited). `GET /me/badges`, `GET /me/certificates`, `GET /me/certificates/:id.pdf`, `POST /members/:id/certificates { kind }` (members:approve scope) → issue.
-
-### 5.10 Events, feedback
-`GET /events?from=&to=&clubId=` (auth), `POST /events` (events:manage for district events; club_events:log for `isDistrictEvent=false` with own clubId), `PATCH /events/:id`, `DELETE /events/:id`; `PUT /events/:id/rsvp { status }` (member; 409 when capacity reached and status going); `GET /events/:id/attendance` (events:checkin or events:manage) → per club counts; `POST /events/:id/checkins { qrToken? , memberId?, walkInName?, clubId? }` (events:checkin; exactly one of qrToken|memberId|walkInName; duplicate → 200 with `alreadyCheckedIn: true`); `GET /events/:id/checkins`; after each check-in enqueue `points.recompute {clubId, ryYear, month, trigger:'event_attendance'}` debounced 30s per (event, club).
-`POST /feedback` (feedback:submit) `{ category, message, eventId? }` (anonymous allowed when settings `feedback.allowAnonymous`), `GET /feedback/mine`, `GET /feedback?status=` (feedback:review), `POST /feedback/:id/reply { reply, status }` (audited; notifies submitter).
-
-### 5.11 Announcements, notifications
-`GET /announcements/feed` (auth; those whose resolved audience includes caller; marks nothing), `POST /announcements/:id/read`; `POST /announcements/audience/estimate { audience }` → `{ count, byChannel: {email, push} }`; `POST /announcements` (announcements:send; audience must be within caller scope unless announcements:send_all) `{ title, body, audience, channels[], sendAt? }`; `GET /announcements/sent`. `POST /push/subscriptions { endpoint, keys }`, `DELETE /push/subscriptions/:endpoint`, `GET /push/vapid-public-key`.
-
-### 5.12 DRR calendar admin (drr_calendar:manage)
-`GET /drr-calendar/bookings?status=`, `POST /drr-calendar/bookings/:id/confirm`, `POST /drr-calendar/bookings/:id/decline { reason }`, `POST /drr-calendar/blocks`, `DELETE /drr-calendar/blocks/:id`, `GET /drr-calendar/status` (Google reachability).
-
-### 5.13 Subdomain admin routes: see §10.
+Total: 34 authenticated resources, 15 public groups. Any route not in these tables must be justified in `docs/api-changes.md` before it is added.
 
 ---
 
@@ -520,7 +450,7 @@ type Trace = { ruleId: string; ruleKey: string; label: string; categoryKey: stri
 5. Emit `points.recomputed {clubId, ryYear}`.
 
 Adapters (`PointSourceAdapter` interface, one class each, registered in a map by `sourceType`):
-- `report_field`: reads submitted reports for the club/month(s); `input.value|count` = numeric coercion of `values[sourceKey]` (arrays → length; booleans → 1/0); for ratio rules reads `numeratorKey`/`denominatorKey`. Special key `filed_on_time` → `MonthlyReport.filedOnTime`.
+- `report_field`: reads submitted reports for the club/month(s); `input.value|count` = numeric coercion of `values[sourceKey]` (arrays → length; booleans → 1/0); for ratio rules reads `numeratorKey`/`denominatorKey`. Special key `filed_on_time` → `Report.filedOnTime`.
 - `club_fact`: reads `club_facts` row; keys map to columns: `dues_paid_bracket` (tiered by months after 31 July: paid by 31 Aug → 0, by 30 Sep → 1, later/unpaid after 30 Sep → 2), `ri_citation_completed`, `paul_harris_fellows`, `dual_members`, `mdio_committee_members`, `mdio_events_attended`, `sister_club_signed`, `drr_visit_completed`, `active_social_handles`, `club_merchandise`, `retention_ratio` (numerator = approved member count now, denominator = `priorYearMemberCount`), `skills_adoption_ratio` (numerator = approved members with ≥1 skill, denominator = approved members).
 - `event_attendance`: per district event in the month: numerator = checkins for club, denominator = approved members of club; a monthly rule receives the average ratio across the month's district events (null when none).
 - `project_collaboration`: `count` = number of `project_clubs` for published projects where club is lead, per month of `publishedAt`; the tiered rule uses the max collaborator count among that month's projects.
@@ -659,7 +589,7 @@ Each line: route → page component → data → mockup (file, screen). Implemen
 **Main surface, public**
 - `/` HomePage → `/public/home` → Public Pages Part 1 §1. Hero snap strip (native `scroll-snap-type:x mandatory`, autoplay every 5s paused on hover/touch/reduced-motion), live counter card (increments `/public/visits` once per session), 4 stats, flagship expanding carousel (flex 6/1/1/1/1, hover/focus expands, 0.7s), showcase teaser grid 4→2→1, 4 CTA cards, footer.
 - `/map` MapPage → `/public/clubs` → Part 1 §2. Leaflet + OSM tiles, zone filter chips, pin click → side panel (name, president + WhatsApp `https://wa.me/<digits>` + mailto, KPIs, "View full club profile" → `/leadership/clubs/:slug`), states: loading, tiles-failed banner, empty-zone.
-- `/showcase` ShowcasePage → `/public/showcase` → Part 1 §3; category filter chips, uniform-height grid, pagination. `/showcase/:slug` ShowcaseDetailPage → Part 1 §4 (photos gallery, lead + collaborating clubs, related). `/showcase/clubs/:clubSlug` ClubShowcasePage → Part 3 §22.
+- `/projects` ShowcasePage → `/public/projects` → Part 1 §3; category filter chips, uniform-height grid, pagination. `/showcase/:slug` ShowcaseDetailPage → Part 1 §4 (photos gallery, lead + collaborating clubs, related). `/showcase/clubs/:clubSlug` ClubShowcasePage → Part 3 §22.
 - `/heritage` HeritagePage → Part 1 §5 (grouped by term, non-contiguous terms shown as "2015-16 · 2018-19"); `/heritage/:slug` DrrProfilePage → Part 1 §6 (low-res portrait renders at fixed 160px with soft border, never upscaled beyond source).
 - `/leadership` LeadershipPage → Part 1 §7 (core trio, DSC roster grid, club leadership list with search); `/leadership/clubs/:slug` ClubLeadershipPage → Part 1 §8 (board table with blood group, contacts, WhatsApp).
 - `/initiatives` InitiativesPage → `/public/initiatives` → Part 2 §9 + Part 3 §23 (unassigned card state "Open for bidding"; unreachable → last figure + timestamp chip).
@@ -674,12 +604,12 @@ Each line: route → page component → data → mockup (file, screen). Implemen
 - `/portal/dashboard` → role-aware: officer (reports:review) → OfficerDashboard (Portal Part 1 §11); president/secretary → ClubDashboard (Portal Part 1 §2: report status, points trend + per-category split, announcements); member → MemberDashboard (Portal Part 2 §15); DAC member → Portal Part 2 §14 variant.
 - `/portal/reports/new` NewReportPage (Portal Part 1 §3): schema-rendered, activity rows add/remove, autosave draft every 10s and on blur, "Notes for the district" textarea. `/portal/reports/:id/review` ReviewSubmitPage (§9). `/portal/reports/history` (§4). `/portal/reports/:id` ReportDetail incl. queried thread (§10).
 - `/portal/announcements` (Portal Part 1 §5). `/portal/resources` (Portal Part 2 §13: unlocked rows for the caller).
-- `/portal/my-club`, `/portal/events` ClubEventTracker (Portal Admin Part 1 §8), `/portal/showcase/submit` (Portal Admin Part 3 §17), `/portal/showcase/mine`.
+- `/portal/my-club`, `/portal/events` ClubEventTracker (Portal Admin Part 1 §8), `/portal/showcase/submit` (Portal Admin Part 3 §17), `/portal/projects (own)`.
 - `/portal/me` MemberCard (Portal Admin Part 2 §16), `/portal/me/profile` (Part 3 §18), `/portal/me/settings` (Part 3 §19: theme, 2FA, trusted devices, push permission button), `/portal/me/contributions`, `/portal/me/certificates`.
 - `/portal/directory` (Portal Admin Part 2 §11; privacy gate modal when not accepted). `/portal/feedback` (Part 2 §15 member side).
 
 **Main surface, admin (RequirePermission per route)**
-- `/portal/admin/clubs` AdminClubs (Portal Part 1 §6) → `/reports/overview`.
+- `/portal/admin/clubs` AdminClubs (Portal Part 1 §6) → `/reports?include=club,points`.
 - `/portal/admin/clubs/:clubId/:month` ScoreMonth (Portal Admin Part 1 §1): computed per category with expandable trace, one judged input + reason, save, query; "Assist" button (reports:score) shows suggestions panel from `/reports/:id/assist`.
 - `/portal/admin/clubs/:clubId/facts` ClubFacts (Part 1 §3). `/portal/admin/point-rules` (Part 1 §2). `/portal/admin/report-form` FormBuilder (Part 1 §4: field list with drag handles or up/down buttons, add field drawer, preview, publish version). `/portal/admin/requests/new` + `/portal/admin/requests` (Part 1 §5). `/portal/content` ContentEditor (Part 1 §6). `/portal/admin/roles` (Part 1 §7). `/portal/admin/events/:slug` EventCheckIn (Part 2 §9: camera QR via `@zxing/browser`, manual search, walk-in, live per-club counts). `/portal/members` MembersApprovals (Part 2 §10) + import wizard (upload → preview table → commit → report). `/portal/admin/effort-log` (Part 2 §12). `/portal/admin/announcements` Compose (Portal Part 2 §12) with `/portal/admin/announcements/audience` AudienceBuilder (Portal Admin Part 2 §13, live estimate). `/portal/admin/settings` (Part 2 §14). `/portal/admin/feedback` (Part 2 §15). `/portal/admin/showcase` ShowcaseQueue (Portal Part 1 §7: submitted text verbatim left, editable published copy right). `/portal/admin/users` (Portal Part 1 §8: user roles management, grant/revoke scoped roles). `/portal/admin/events` EventsAdmin (CRUD). `/portal/admin/public-content/*` simple CRUD tables for achievements/partners/publications/resources/past-drrs/district-team. `/portal/admin/audit`.
 
@@ -691,7 +621,7 @@ Each line: route → page component → data → mockup (file, screen). Implemen
 - Lists: URL-synced filters (`useSearchParams`).
 - Images: always `ImageSlot`, never bare `<img>` for external URLs.
 - Push permission: only requested from the Settings page button or after the first announcement is opened (`sessionStorage` flag), never on load.
-- Dark mode: toggling sets `data-theme` on `<html>` and persists via `PATCH /me/profile` when logged in.
+- Dark mode: toggling sets `data-theme` on `<html>` and persists via `PATCH /me` when logged in.
 
 ---
 
@@ -699,15 +629,15 @@ Each line: route → page component → data → mockup (file, screen). Implemen
 
 Each project module in the API lives in `src/subdomains/<key>/` and exports `summary(): Promise<ProjectSummary>` where `ProjectSummary = { headline: string; value: number; target?: number; unit: string; secondary: {label: string; value: number|string}[]; updatedAt: string }`. Each web surface has `src/app/routes/<key>.routes.tsx` + `src/features/<key>/`.
 
-**mission3011** (Subdomains Part 1 §1–3). Routes: `/` and `/dashboard` (progress vessel: CSS-only filling container to `units/3011`, units by zone bars, latest approved camps, per-club table), `/camps` (list + "Log a camp" form: president/secretary of any club; fields date, venue, city, units, donors, partner blood bank, participating clubs multi-select, photo links), `/admin` (subdomain:mission3011:manage: approvals desk approve/reject with reason). API: `GET /mission3011/camps?status=`, `POST /mission3011/camps`, `POST /mission3011/camps/:id/approve|reject`, `GET /public/mission3011/dashboard`. Approved camps only count. Summary value = Σ units approved, target 3011.
+**mission3011** (Subdomains Part 1 §1–3). Routes: `/` and `/dashboard` (progress vessel: CSS-only filling container to `units/3011`, units by zone bars, latest approved camps, per-club table), `/camps` (list + "Log a camp" form: president/secretary of any club; fields date, venue, city, units, donors, partner blood bank, participating clubs multi-select, photo links), `/admin` (subdomain:mission3011:manage: approvals desk approve/reject with reason). API: `GET /mission3011/camps?status=`, `POST /mission3011/camps`, `POST /mission3011/camps/:id (PATCH status)`, `GET /public/mission3011/dashboard`. Approved camps only count. Summary value = Σ units approved, target 3011.
 
-**drishti** (Part 1 §4–6). Routes: `/dashboard` (100-surgery target gauge, pipeline counts, hospitals, per-club), `/beneficiaries` (log a patient form; list with stage filter; phone shown masked `••••1234` unless project admin), `/surgeries` (pipeline board columns screened→scheduled→operated→followup→closed with "Move to" buttons; keyboard accessible; each move records a surgery row when entering operated). API: `GET/POST /drishti/beneficiaries`, `PATCH /drishti/beneficiaries/:id/stage {stage, surgery?}`, `GET /public/drishti/dashboard`. Phone encrypted with AES-256-GCM (`DRISHTI_PII_KEY`), decrypted only for project admins. Summary value = operated count, target 100.
+**drishti** (Part 1 §4–6). Routes: `/dashboard` (100-surgery target gauge, pipeline counts, hospitals, per-club), `/beneficiaries` (log a patient form; list with stage filter; phone shown masked `••••1234` unless project admin), `/surgeries` (pipeline board columns screened→scheduled→operated→followup→closed with "Move to" buttons; keyboard accessible; each move records a surgery row when entering operated). API: `GET/POST /drishti/beneficiaries`, `PATCH /drishti/beneficiaries/:id {stage, surgery?}`, `GET /public/drishti/dashboard`. Phone encrypted with AES-256-GCM (`DRISHTI_PII_KEY`), decrypted only for project admins. Summary value = operated count, target 100.
 
-**rcl** (Part 1 §7–9). Routes: `/standings` (public), `/fixtures` (public; admin enters results inline), `/register` (president/secretary: one team per club per season, roster up to 15). API: `GET/POST /rcl/teams`, `PATCH /rcl/teams/:id`, `GET/POST /rcl/fixtures`, `PUT /rcl/fixtures/:id/result`, `GET /public/rcl/standings`, `GET /public/rcl/fixtures`. Summary value = teams registered.
+**rcl** (Part 1 §7–9). Routes: `/standings` (public), `/fixtures` (public; admin enters results inline), `/register` (president/secretary: one team per club per season, roster up to 15). API: `GET/POST /rcl/teams`, `PATCH /rcl/teams/:id`, `GET/POST /rcl/fixtures`, `PUT /rcl/fixtures/:id (PATCH result)`, `GET /public/rcl/standings`, `GET /public/rcl/fixtures`. Summary value = teams registered.
 
 **careerbridge** (Part 2 §10–13). Routes: `/opportunities` (public browse with filters, verified+filled listings; filled shown with "Filled" badge), `/:id` (detail; apply URL / contact reveal button), `/post` (public form; honeypot; success "check your email"), `/admin` (verification desk: pending list, verify/reject/mark filled/expire; posted-vs-filled counters). Expiry job daily marks verified listings older than `careerbridge.expiryDays` as expired. Summary value = verified open listings, secondary filled count.
 
-**ride** (Part 2 §14–17). Routes: `/incoming` (public list of delegations with dates, headcount, assigned host clubs), `/support-club` (president/secretary registration form: capacity, homestay, preferred months, contact; one per club per RY; editable), `/gallery` (public; year tabs; photos via ImageSlot, videos embedded for youtube.com/youtu.be/drive.google.com/file), `/admin` (subdomain:ride:manage: delegations CRUD; host assignment drawer listing registered support clubs with capacity and preferred-month match; add host row with days hosted and members sent; multiple hosts per delegation). API: `GET/POST /ride/support-clubs`, `GET/POST/PATCH /ride/delegations`, `PUT /ride/delegations/:id/hosts { hosts: {clubId, daysHosted, membersSent}[] }` (replaces set; audited; recompute for every affected club; notifies hosts), `GET/POST/DELETE /ride/gallery`. Summary value = delegations this RY, secondary host clubs count.
+**ride** (Part 2 §14–17). Routes: `/incoming` (public list of delegations with dates, headcount, assigned host clubs), `/support-club` (president/secretary registration form: capacity, homestay, preferred months, contact; one per club per RY; editable), `/gallery` (public; year tabs; photos via ImageSlot, videos embedded for youtube.com/youtu.be/drive.google.com/file), `/admin` (subdomain:ride:manage: delegations CRUD; host assignment drawer listing registered support clubs with capacity and preferred-month match; add host row with days hosted and members sent; multiple hosts per delegation). API: `GET/POST /ride/support-clubs`, `GET/POST/PATCH /ride/delegations`, `PUT /ride/delegations/:id/hosts { hosts: {clubId, daysHosted, membersSent}[] }` (replaces set; audited; recompute for every affected club; notifies hosts), `GET/POST/DELETE /ride/gallery-items`. Summary value = delegations this RY, secondary host clubs count.
 
 ---
 
@@ -740,7 +670,7 @@ API: `npm ci` → `npm run lint` → `npx prisma validate` → `npm run test` �
 
 API e2e (supertest, real Postgres):
 1. Login with legacy-migrated president → 2FA email OTP required → verify → `/me` shows `president` scoped to their club and `member` role.
-2. President of club A `GET /reports/:idOfClubB` → 404. ZRR of Zone Prithvi lists `/reports/overview` → only Prithvi clubs. DSC sees all.
+2. President of club A `GET /reports/:idOfClubB` → 404. ZRR of Zone Prithvi lists `/reports?include=club,points` → only Prithvi clubs. DSC sees all.
 3. Submit report with `physical_meetings=3`, two activities (one flagship, one community with 4 collaborating clubs) → `club_point_entries` has `club_physical_meetings=60`, `flagship_continued=50`, `cd_collaboration` tier [2,6)=20, `rep_on_time=20` when before deadline.
 4. Update `club_facts.paulHarrisFellows=2` → `ri_phf` yearly entry 500; update again to 1 → 250 (idempotent replace). `drr_visit` once: set date twice → single entry 40.
 5. Judged points without reason → 400; with reason → audit_log row with before/after.
@@ -748,7 +678,7 @@ API e2e (supertest, real Postgres):
 7. Member self-registers → president receives `member-registered` outbox row; approve → member sees `/me/club`; duplicate email register → 409.
 8. CSV import with 3 rows: one existing (link), one new, one duplicated inside file (skip) → counts `{created:1, linked:1, skipped:1}`.
 9. Directory: opt-in without privacy acceptance → 409; after acceptance → listed; non-opted members never appear.
-10. Showcase: member submits with consent → president notified; DSC edits published copy and publishes → `/public/showcase/:slug` returns published copy, not submitted text; collaborator clubs returned as objects with ids.
+10. Showcase: member submits with consent → president notified; DSC edits published copy and publishes → `/public/projects/:slug` returns published copy, not submitted text; collaborator clubs returned as objects with ids.
 11. Announcement audience `{roleKeys:['secretary'], zoneIds:[Agni]}` estimate = number of secretaries of Agni clubs; sending creates one outbox row per recipient per channel; president targeting another club → 403.
 12. Email pool: with usage resend=100 for today → next send uses mailgun; when mailgun send throws → gmail used and outbox `provider='gmail'`.
 13. DRR booking on a slot overlapping a Google busy interval → 409; valid → `requested` + `googleEventId` set (fake Google client); confirm → notification `booking-confirmed`.
@@ -780,3 +710,247 @@ Do these in order; each step ends with green CI and a deploy to staging.
 12. Mission 3011 + Drishti.
 13. RCL + Career Bridge + RIDE (+ ride adapter).
 14. Cutover: freeze legacy Supabase, reconcile rows changed since 2026-09-03, DNS for all hostnames, backups (`pg_dump` every 15 min → `onedrive:Backup/RAC3011-15min/`, daily 30d), rate limits, Sentry, full Playwright + axe + Lighthouse (≥90 mobile on Home/Map/Showcase), runbook `docs/runbook.md`, drop `user_profiles` and legacy text columns.
+
+---
+
+## Appendix A. Reference model definitions (unchanged groups)
+
+Models referenced from §3.3 "as in Appendix A". Superseded models (LegacyUserProfile, MonthlyReport, ProjectSubmission, Announcement with legacy columns) are NOT to be used; §3.3 is authoritative where they differ.
+
+
+
+`prisma/schema.prisma`. Generator `prisma-client-js`, datasource postgresql `env("DATABASE_URL")`. All tables `@@map` to snake_case; all columns `@map` to snake_case (write them out; Prisma has no global mapping). Every model has `createdAt DateTime @default(now()) @map("created_at")` and `updatedAt DateTime @updatedAt @map("updated_at")` unless stated. IDs are `String @id @default(cuid())` unless stated. Enums are Prisma enums with the values listed.
+
+### A.1 Baseline: legacy tables
+
+The target database already contains `clubs`, `user_profiles`, `monthly_reports`, `project_submissions`, `announcements`. Step 1 is `prisma db pull`, then write the baseline migration with `prisma migrate diff --from-empty --to-schema-datamodel` and mark it applied with `prisma migrate resolve --applied <name>`. Keep `user_profiles` as `LegacyUserProfile @@map("user_profiles")` (read-only, dropped in §13 phase 14). Rename models: `clubs → Club`, `monthly_reports → MonthlyReport`, `project_submissions → ProjectSubmission`, `announcements → Announcement`.
+
+### A.2 Identity, RBAC, audit
+
+```prisma
+model User {            // better-auth managed
+  id String @id
+  name String
+  email String @unique
+  emailVerified Boolean @default(false) @map("email_verified")
+  image String?
+  twoFactorEnabled Boolean @default(false) @map("two_factor_enabled")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  sessions Session[]  accounts Account[]  profile MemberProfile?  userRoles UserRole[]
+  @@map("user")
+}
+model Session { id String @id; expiresAt DateTime @map("expires_at"); token String @unique; ipAddress String? @map("ip_address"); userAgent String? @map("user_agent"); userId String @map("user_id"); user User @relation(fields:[userId], references:[id], onDelete: Cascade); createdAt DateTime @default(now()) @map("created_at"); updatedAt DateTime @updatedAt @map("updated_at"); @@map("session") }
+model Account { id String @id; accountId String @map("account_id"); providerId String @map("provider_id"); userId String @map("user_id"); user User @relation(fields:[userId], references:[id], onDelete: Cascade); password String?; accessToken String? @map("access_token"); refreshToken String? @map("refresh_token"); idToken String? @map("id_token"); accessTokenExpiresAt DateTime? @map("access_token_expires_at"); refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at"); scope String?; createdAt DateTime @default(now()) @map("created_at"); updatedAt DateTime @updatedAt @map("updated_at"); @@map("account") }
+model Verification { id String @id; identifier String; value String; expiresAt DateTime @map("expires_at"); createdAt DateTime @default(now()) @map("created_at"); updatedAt DateTime @updatedAt @map("updated_at"); @@map("verification") }
+model TwoFactor { id String @id; secret String; backupCodes String @map("backup_codes"); userId String @map("user_id"); @@map("two_factor") }
+
+enum MemberStatus { pending approved suspended }
+model MemberProfile {
+  id String @id @default(cuid())
+  userId String @unique @map("user_id");  user User @relation(fields:[userId], references:[id], onDelete: Cascade)
+  fullName String @map("full_name")
+  email String @unique              // stored lowercased
+  phone String?
+  rotaryId String? @map("rotary_id")
+  clubId String @map("club_id");   club Club @relation(fields:[clubId], references:[id])
+  photoUrl String? @map("photo_url")
+  bio String?
+  skills String[] @default([])
+  interests String[] @default([])
+  membershipAnniversary DateTime? @map("membership_anniversary") @db.Date
+  status MemberStatus @default(pending)
+  approvedById String? @map("approved_by_id")
+  approvedAt DateTime? @map("approved_at")
+  rejectionReason String? @map("rejection_reason")
+  qrToken String @unique @default(cuid()) @map("qr_token")
+  directoryOptIn Boolean @default(false) @map("directory_opt_in")
+  isDacMember Boolean @default(false) @map("is_dac_member")
+  legacyProfileId String? @unique @map("legacy_profile_id")
+  themePreference String @default("system") @map("theme_preference")
+  createdAt/updatedAt
+  @@index([clubId]) @@index([status])
+  @@map("member_profiles")
+}
+enum ScopeType { none club zone project }
+model Role { id String @id @default(cuid()); key String @unique; name String; description String?; isSystem Boolean @default(false) @map("is_system"); scopeType ScopeType @default(none) @map("scope_type"); permissions RolePermission[]; userRoles UserRole[]; createdAt/updatedAt; @@map("roles") }
+model Permission { id String @id @default(cuid()); key String @unique; description String; roles RolePermission[]; @@map("permissions") }
+model RolePermission { roleId String @map("role_id"); permissionId String @map("permission_id"); role Role @relation(...onDelete: Cascade); permission Permission @relation(...onDelete: Cascade); @@id([roleId, permissionId]); @@map("role_permissions") }
+model UserRole { id String @id @default(cuid()); userId String @map("user_id"); roleId String @map("role_id"); scopeType ScopeType @map("scope_type"); scopeId String? @map("scope_id"); grantedById String? @map("granted_by_id"); grantedAt DateTime @default(now()) @map("granted_at"); user User @relation(...onDelete: Cascade); role Role @relation(...onDelete: Cascade); @@unique([userId, roleId, scopeType, scopeId]); @@index([userId]); @@map("user_roles") }
+model AuditLog { id String @id @default(cuid()); actorId String? @map("actor_id"); action String; resourceType String @map("resource_type"); resourceId String? @map("resource_id"); before Json?; after Json?; at DateTime @default(now()); @@index([resourceType, resourceId]); @@index([actorId]); @@map("audit_log") }
+model TrustedDevice { id String @id @default(cuid()); userId String @map("user_id"); tokenHash String @unique @map("token_hash"); userAgent String? @map("user_agent"); expiresAt DateTime @map("expires_at"); createdAt; @@index([userId]); @@map("trusted_devices") }
+```
+
+### A.3 Clubs
+
+```prisma
+model Zone { id String @id @default(cuid()); name String @unique; order Int @default(0); clubs Club[]; @@map("zones") }
+model Club {   // existing columns kept; new columns added
+  id String @id                          // legacy text id, keep
+  name String; shortName String? @map("short_name"); zone String?  // legacy string, keep until phase 14
+  zoneId String? @map("zone_id");  zoneRef Zone? @relation(fields:[zoneId], references:[id])
+  slug String? @unique
+  lat Float?; lng Float?; president String?; isDirector String? @default("") @map("is_director"); phone String?; email String?; rotaryId String? @map("rotary_id"); secretary String?; secretaryEmail String? @map("secretary_email"); secretaryPhone String? @map("secretary_phone"); initiatives Json @default("[]")
+  charterDate DateTime? @map("charter_date") @db.Date; isActive Boolean @default(true) @map("is_active"); meetingInfo String? @map("meeting_info"); socialLinks Json? @map("social_links"); logoUrl String? @map("logo_url")
+  createdAt DateTime? @default(now()) @map("created_at"); updatedAt DateTime? @default(now()) @updatedAt @map("updated_at")
+  @@map("clubs")
+}
+model ClubBoardMember { id String @id @default(cuid()); clubId String @map("club_id"); memberId String? @map("member_id"); name String; position String; bloodGroup String? @map("blood_group"); phone String?; email String?; ryYear Int @map("ry_year"); order Int @default(0); club Club @relation(...); createdAt/updatedAt; @@index([clubId, ryYear]); @@map("club_board_members") }
+model ClubFacts {
+  id String @id @default(cuid()); clubId String @map("club_id"); ryYear Int @map("ry_year")
+  duesPaidOn DateTime? @map("dues_paid_on") @db.Date
+  riCitationCompleted Boolean @default(false) @map("ri_citation_completed")
+  paulHarrisFellows Int @default(0) @map("paul_harris_fellows")
+  dualMembers Int @default(0) @map("dual_members")
+  mdioCommitteeMembers Int @default(0) @map("mdio_committee_members")
+  mdioEventsAttended Int @default(0) @map("mdio_events_attended")
+  sisterClubSignedOn DateTime? @map("sister_club_signed_on") @db.Date
+  drrVisitOn DateTime? @map("drr_visit_on") @db.Date
+  activeSocialHandles Int @default(0) @map("active_social_handles")
+  clubMerchandise Boolean @default(false) @map("club_merchandise")
+  clubWebsiteUrl String? @map("club_website_url")
+  priorYearMemberCount Int? @map("prior_year_member_count")
+  updatedById String? @map("updated_by_id")
+  club Club @relation(...); createdAt/updatedAt
+  @@unique([clubId, ryYear]); @@map("club_facts")
+}
+```
+
+### A.4 Content, settings, assets
+
+```prisma
+enum ContentType { text richtext image link list }
+enum PublishStatus { draft published }
+model ContentBlock { id; pageKey String @map("page_key"); sectionKey String @map("section_key"); type ContentType; draftValue Json @map("draft_value"); publishedValue Json? @map("published_value"); publishedAt DateTime? @map("published_at"); updatedById String? @map("updated_by_id"); createdAt/updatedAt; @@unique([pageKey, sectionKey]); @@map("content_blocks") }
+model Setting { key String @id; value Json; updatedById String? @map("updated_by_id"); updatedAt; @@map("settings") }
+enum LinkStatus { unchecked ok broken private }
+model AssetLink { id; url String; kind String; status LinkStatus @default(unchecked); lastCheckedAt DateTime? @map("last_checked_at"); lastError String? @map("last_error"); ownerUserId String? @map("owner_user_id"); resourceType String @map("resource_type"); resourceId String @map("resource_id"); createdAt/updatedAt; @@unique([resourceType, resourceId, url]); @@index([status]); @@map("asset_links") }
+```
+
+### A.5 Public content tables
+
+```prisma
+model PastDrr { id; name String; slug String @unique; terms String[]  /* e.g. ["2019-20"] */; homeClubId String? @map("home_club_id"); photoUrl String? @map("photo_url"); bio String?; order Int; isLowResPhoto Boolean @default(false) @map("is_low_res_photo"); createdAt/updatedAt; @@map("past_drrs") }
+enum TeamKind { core dsc }
+model DistrictTeamMember { id; memberId String? @map("member_id"); name String; designation String; kind TeamKind; order Int; photoUrl String? @map("photo_url"); phone String?; email String?; bio String?; clubId String? @map("club_id"); ryYear Int @map("ry_year"); createdAt/updatedAt; @@map("district_team") }
+enum AchievementType { chartered_club award milestone }
+model Achievement { id; type AchievementType; title String; clubId String? @map("club_id"); date DateTime @db.Date; certificateUrl String? @map("certificate_url"); description String?; order Int @default(0); createdAt/updatedAt; @@map("achievements") }
+enum PermissionStatus { pending granted }
+model Partner { id; name String; logoUrl String? @map("logo_url"); tier String; website String?; permissionStatus PermissionStatus @default(pending) @map("permission_status"); order Int @default(0); createdAt/updatedAt; @@map("partners") }
+enum PublicationType { directory newsletter }
+model Publication { id; title String; type PublicationType; url String; month DateTime @db.Date; coverUrl String? @map("cover_url"); createdAt/updatedAt; @@map("publications") }
+enum ResourceCategory { documents forms logos photos guest_kit templates }
+model Resource { id; category ResourceCategory; title String; description String?; url String; isLocked Boolean @default(false) @map("is_locked"); requiredPermission String? @map("required_permission"); comingSoonMonth String? @map("coming_soon_month"); order Int @default(0); createdAt/updatedAt; @@map("resources") }
+model SisterClubRequest { id; clubId String @map("club_id"); partnerClubName String @map("partner_club_name"); partnerDistrict String @map("partner_district"); country String; contactName String @map("contact_name"); contactEmail String @map("contact_email"); status String @default("submitted"); signedOn DateTime? @map("signed_on") @db.Date; submittedById String? @map("submitted_by_id"); createdAt/updatedAt; @@map("sister_club_requests") }
+enum EnquiryKind { new_club sponsor contact }
+model Enquiry { id; kind EnquiryKind; name String; email String; phone String?; organisation String?; message String; payload Json?; routedTo String @map("routed_to"); status String @default("new"); createdAt/updatedAt; @@map("enquiries") }
+model PageView { year Int @id; count BigInt @default(0); @@map("page_views") }
+```
+
+### A.6 Reporting and points
+
+```prisma
+enum SchemaStatus { draft active retired }
+model ReportFormSchema { id; version Int @unique; status SchemaStatus @default(draft); publishedAt DateTime? @map("published_at"); createdById String? @map("created_by_id"); fields ReportFormField[]; createdAt/updatedAt; @@map("report_form_schemas") }
+enum FieldType { text textarea number select multiselect link date boolean clubs }
+model ReportFormField { id; schemaId String @map("schema_id"); section String; fieldKey String @map("field_key"); label String; type FieldType; options Json?; required Boolean @default(false); order Int; helpText String? @map("help_text"); pointSourceKey String? @map("point_source_key"); schema ReportFormSchema @relation(...onDelete: Cascade); @@unique([schemaId, fieldKey]); @@map("report_form_fields") }
+enum ReportStatus { draft submitted queried scored }
+model MonthlyReport {   // legacy table, extended
+  id String @id @default(uuid()) @db.Uuid
+  month String            // legacy text, keep
+  clubName String @map("club_name"); clubEmail String @map("club_email"); submittedBy String @map("submitted_by")   // legacy, keep
+  status String? @default("reported"); flagComment String? @map("flag_comment"); sectionsJson Json @map("sections_json"); submittedAt DateTime? @default(now()) @map("submitted_at"); flagReason String? @map("flag_reason"); flaggedBy String? @map("flagged_by"); flaggedAt DateTime? @map("flagged_at"); sectionFlags Json? @default("{}") @map("section_flags")
+  clubId String? @map("club_id"); monthDate DateTime? @map("month_date") @db.Date; schemaVersion Int @default(1) @map("schema_version"); status2 ReportStatus @default(submitted) @map("status2"); submittedById String? @map("submitted_by_id"); notes String?; queriedById String? @map("queried_by_id"); queryText String? @map("query_text"); queryReply String? @map("query_reply"); resolvedAt DateTime? @map("resolved_at"); filedOnTime Boolean? @map("filed_on_time")
+  @@unique([clubId, monthDate]); @@map("monthly_reports")
+}
+model ReportRequest { id; title String; description String?; questions Json  /* [{key,label,type,required}] */; audience Json /* {roleKeys[],zoneIds[],clubIds[]} */; dueAt DateTime @map("due_at"); createdById String @map("created_by_id"); responses ReportRequestResponse[]; createdAt/updatedAt; @@map("report_requests") }
+model ReportRequestResponse { id; requestId String @map("request_id"); clubId String @map("club_id"); answers Json; submittedById String @map("submitted_by_id"); request ReportRequest @relation(...onDelete: Cascade); createdAt/updatedAt; @@unique([requestId, clubId]); @@map("report_request_responses") }
+model PointCategory { id; key String @unique; name String; order Int; rules PointRule[]; @@map("point_categories") }
+enum RuleType { flat per_unit tiered penalty }
+enum RulePeriod { monthly yearly once }
+enum SourceType { report_field club_fact event_attendance project_collaboration ride_hosting club_events }
+model PointRule { id; categoryId String @map("category_id"); key String @unique; label String; ruleType RuleType @map("rule_type"); period RulePeriod; sourceType SourceType @map("source_type"); sourceKey String @map("source_key"); numeratorKey String? @map("numerator_key"); denominatorKey String? @map("denominator_key"); points Decimal? @db.Decimal(10,2); perUnitCap Int? @map("per_unit_cap"); isActive Boolean @default(true) @map("is_active"); ryYear Int @map("ry_year"); category PointCategory @relation(...); tiers PointRuleTier[]; createdAt/updatedAt; @@map("point_rules") }
+model PointRuleTier { id; ruleId String @map("rule_id"); min Decimal @db.Decimal(10,2); max Decimal? @db.Decimal(10,2); points Decimal @db.Decimal(10,2); rule PointRule @relation(...onDelete: Cascade); @@map("point_rule_tiers") }
+enum EntryKind { computed judged }
+model ClubPointEntry { id; clubId String @map("club_id"); ryYear Int @map("ry_year"); periodKey String @map("period_key")  /* "2026-08" | "2026" | "once" */; ruleId String? @map("rule_id"); categoryId String @map("category_id"); kind EntryKind; points Decimal @db.Decimal(10,2); reason String?; traceJson Json? @map("trace_json"); sourceType String? @map("source_type"); sourceId String? @map("source_id"); createdById String? @map("created_by_id"); createdAt/updatedAt; @@unique([clubId, ruleId, periodKey], map: "club_point_entries_computed_idempotent"); @@index([clubId, ryYear]); @@map("club_point_entries") }
+```
+Note: the unique index above must be a partial index `WHERE kind='computed'`: Prisma cannot express it, so add it by hand in the migration SQL and remove the generated non-partial one.
+
+### A.7 Showcase, effort, badges, certificates
+
+```prisma
+enum ShowcaseStatus { draft submitted approved published rejected }
+model ProjectSubmission {   // legacy table, extended; drop any legacy club_name column usage
+  id String @id @default(uuid()) @db.Uuid
+  /* keep every legacy column as-is here */
+  slug String? @unique; title String?; category String?; summary String?; body String?; date DateTime? @db.Date; beneficiaries Int?; photos String[] @default([]); submittedById String? @map("submitted_by_id"); status2 ShowcaseStatus @default(draft) @map("status2"); publishedTitle String? @map("published_title"); publishedSummary String? @map("published_summary"); publishedBody String? @map("published_body"); editorNotes String? @map("editor_notes"); rejectionReason String? @map("rejection_reason"); publishedAt DateTime? @map("published_at"); publishedById String? @map("published_by_id"); consentConfirmed Boolean @default(false) @map("consent_confirmed")
+  clubs ProjectClub[]
+  @@map("project_submissions")
+}
+enum ProjectClubRole { lead collaborator }
+model ProjectClub { projectId String @map("project_id") @db.Uuid; clubId String @map("club_id"); role ProjectClubRole; project ProjectSubmission @relation(...onDelete: Cascade); club Club @relation(...); @@id([projectId, clubId]); @@map("project_clubs") }
+enum EffortKind { admin self }
+enum ApprovalStatus { pending approved rejected }
+model EffortLog { id; kind EffortKind; memberId String? @map("member_id"); personName String @map("person_name"); clubId String @map("club_id"); taskDescription String @map("task_description"); hours Decimal @db.Decimal(6,2); date DateTime @db.Date; loggedById String @map("logged_by_id"); status ApprovalStatus @default(approved); approvedById String? @map("approved_by_id"); approvedAt DateTime? @map("approved_at"); rejectionReason String? @map("rejection_reason"); pointsAwarded Decimal? @map("points_awarded") @db.Decimal(10,2); pointEntryId String? @map("point_entry_id"); createdAt/updatedAt; @@index([clubId]); @@index([memberId]); @@map("effort_log") }
+model Badge { id; key String @unique; label String; description String; icon String; triggerType String @map("trigger_type"); threshold Int?; @@map("badges") }
+model MemberBadge { memberId String @map("member_id"); badgeId String @map("badge_id"); earnedAt DateTime @default(now()) @map("earned_at"); @@id([memberId, badgeId]); @@map("member_badges") }
+model Certificate { id; memberId String @map("member_id"); kind String; title String; issuedAt DateTime @default(now()) @map("issued_at"); issuedById String? @map("issued_by_id"); data Json; @@index([memberId]); @@map("certificates") }
+model MemberPrivacyAcceptance { memberId String @map("member_id"); policyPublishedAt DateTime @map("policy_published_at"); acceptedAt DateTime @default(now()) @map("accepted_at"); @@id([memberId, policyPublishedAt]); @@map("member_privacy_acceptances") }
+model SkillTag { id; label String @unique; kind String /* skill | interest */; @@map("skill_tags") }
+```
+
+### A.8 Events, calendar, feedback, comms
+
+```prisma
+model Event { id; title String; slug String @unique; startsAt DateTime @map("starts_at"); endsAt DateTime? @map("ends_at"); location String?; description String?; coverUrl String? @map("cover_url"); isDistrictEvent Boolean @default(true) @map("is_district_event"); clubId String? @map("club_id")  /* set for club-logged events */; rsvpOpen Boolean @default(true) @map("rsvp_open"); capacity Int?; photos String[] @default([]); createdById String @map("created_by_id"); rsvps EventRsvp[]; checkins EventCheckin[]; createdAt/updatedAt; @@index([startsAt]); @@map("events") }
+enum RsvpStatus { going maybe not_going }
+model EventRsvp { eventId String @map("event_id"); memberId String @map("member_id"); status RsvpStatus; event Event @relation(...onDelete: Cascade); createdAt/updatedAt; @@id([eventId, memberId]); @@map("event_rsvps") }
+enum CheckinMethod { qr manual walk_in }
+model EventCheckin { id; eventId String @map("event_id"); memberId String? @map("member_id"); walkInName String? @map("walk_in_name"); clubId String @map("club_id"); method CheckinMethod; checkedInAt DateTime @default(now()) @map("checked_in_at"); checkedInById String @map("checked_in_by_id"); event Event @relation(...onDelete: Cascade); @@unique([eventId, memberId]); @@index([eventId, clubId]); @@map("event_checkins") }
+enum BookingPurpose { installation club_event meeting }
+enum BookingStatus { requested held confirmed declined cancelled }
+model DrrBooking { id; reference String @unique; purpose BookingPurpose; clubId String? @map("club_id"); requesterName String @map("requester_name"); requesterEmail String @map("requester_email"); requesterPhone String @map("requester_phone"); startsAt DateTime @map("starts_at"); endsAt DateTime @map("ends_at"); notes String?; status BookingStatus @default(requested); googleEventId String? @map("google_event_id"); decisionReason String? @map("decision_reason"); decidedById String? @map("decided_by_id"); decidedAt DateTime? @map("decided_at"); createdAt/updatedAt; @@index([startsAt]); @@map("drr_bookings") }
+model DrrBlock { id; startsAt DateTime @map("starts_at"); endsAt DateTime @map("ends_at"); reason String?; createdById String @map("created_by_id"); @@map("drr_blocks") }
+model Announcement {   // legacy table extended; keep legacy columns
+  id String @id @default(uuid()) @db.Uuid
+  /* legacy columns kept */
+  title2 String? @map("title2"); body String?; audience Json? /* {roleKeys[],zoneIds[],clubIds[],memberIds[]} */; channels String[] @default([]); sendAt DateTime? @map("send_at"); sentAt DateTime? @map("sent_at"); recipientCount Int? @map("recipient_count"); createdById String? @map("created_by_id"); reads AnnouncementRead[]
+  @@map("announcements")
+}
+model AnnouncementRead { announcementId String @map("announcement_id") @db.Uuid; userId String @map("user_id"); readAt DateTime @default(now()) @map("read_at"); announcement Announcement @relation(...onDelete: Cascade); @@id([announcementId, userId]); @@map("announcement_reads") }
+enum FeedbackStatus { open reviewed closed }
+model Feedback { id; submittedById String? @map("submitted_by_id"); clubId String? @map("club_id"); category String; message String; eventId String? @map("event_id"); status FeedbackStatus @default(open); reply String?; reviewedById String? @map("reviewed_by_id"); reviewedAt DateTime? @map("reviewed_at"); createdAt/updatedAt; @@index([status]); @@map("feedback") }
+enum Channel { email push }
+enum OutboxStatus { queued sent failed }
+model NotificationOutbox { id; channel Channel; toUserId String? @map("to_user_id"); toAddress String @map("to_address"); template String; subject String?; payload Json; status OutboxStatus @default(queued); provider String?; attempts Int @default(0); lastError String? @map("last_error"); sentAt DateTime? @map("sent_at"); createdAt/updatedAt; @@index([status]); @@map("notification_outbox") }
+model EmailProviderUsage { provider String; day DateTime @db.Date; count Int @default(0); @@id([provider, day]); @@map("email_provider_usage") }
+model PushSubscription { id; userId String @map("user_id"); endpoint String @unique; p256dh String; auth String; userAgent String? @map("user_agent"); createdAt/updatedAt; @@index([userId]); @@map("push_subscriptions") }
+```
+
+### A.9 Subdomains
+
+```prisma
+enum CampStatus { submitted approved rejected }
+model M3011Camp { id; leadClubId String @map("lead_club_id"); date DateTime @db.Date; venue String; city String?; unitsCollected Int @map("units_collected"); donorsRegistered Int? @map("donors_registered"); partnerBloodBank String? @map("partner_blood_bank"); photos String[] @default([]); status CampStatus @default(submitted); submittedById String @map("submitted_by_id"); reviewedById String? @map("reviewed_by_id"); reviewedAt DateTime? @map("reviewed_at"); rejectionReason String? @map("rejection_reason"); clubs M3011CampClub[]; createdAt/updatedAt; @@index([status]); @@map("m3011_camps") }
+model M3011CampClub { campId String @map("camp_id"); clubId String @map("club_id"); camp M3011Camp @relation(...onDelete: Cascade); @@id([campId, clubId]); @@map("m3011_camp_clubs") }
+enum DrishtiStage { screened scheduled operated followup closed }
+model DrishtiBeneficiary { id; clubId String @map("club_id"); name String; age Int?; gender String?; phoneEncrypted String? @map("phone_encrypted"); eye String /* left|right|both */; screenedOn DateTime @map("screened_on") @db.Date; campLocation String? @map("camp_location"); stage DrishtiStage @default(screened); notes String?; createdById String @map("created_by_id"); surgeries DrishtiSurgery[]; createdAt/updatedAt; @@index([clubId]); @@index([stage]); @@map("drishti_beneficiaries") }
+model DrishtiSurgery { id; beneficiaryId String @map("beneficiary_id"); hospital String; operatedOn DateTime @map("operated_on") @db.Date; outcome String?; followupOn DateTime? @map("followup_on") @db.Date; beneficiary DrishtiBeneficiary @relation(...onDelete: Cascade); createdAt/updatedAt; @@map("drishti_surgeries") }
+enum TeamStatus { registered confirmed withdrawn }
+model RclTeam { id; season Int; clubId String @map("club_id"); name String; captainName String @map("captain_name"); captainPhone String @map("captain_phone"); status TeamStatus @default(registered); players RclPlayer[]; createdById String @map("created_by_id"); createdAt/updatedAt; @@unique([season, clubId]); @@map("rcl_teams") }
+model RclPlayer { id; teamId String @map("team_id"); memberId String? @map("member_id"); name String; role String?; team RclTeam @relation(...onDelete: Cascade); @@map("rcl_players") }
+enum FixtureStatus { scheduled completed abandoned }
+model RclFixture { id; season Int; homeTeamId String @map("home_team_id"); awayTeamId String @map("away_team_id"); scheduledAt DateTime @map("scheduled_at"); venue String?; status FixtureStatus @default(scheduled); result RclResult?; createdAt/updatedAt; @@map("rcl_fixtures") }
+model RclResult { fixtureId String @id @map("fixture_id"); homeRuns Int @map("home_runs"); homeWickets Int @map("home_wickets"); homeOvers Decimal @map("home_overs") @db.Decimal(4,1); awayRuns Int @map("away_runs"); awayWickets Int @map("away_wickets"); awayOvers Decimal @map("away_overs") @db.Decimal(4,1); winnerTeamId String? @map("winner_team_id"); notes String?; enteredById String @map("entered_by_id"); fixture RclFixture @relation(...onDelete: Cascade); createdAt/updatedAt; @@map("rcl_results") }
+enum ListingType { job internship mentorship }
+enum ListingStatus { pending_email pending verified filled expired rejected }
+model CbListing { id; title String; company String; type ListingType; location String; mode String /* onsite|remote|hybrid */; stipend String?; description String; applyUrl String? @map("apply_url"); contactEmail String @map("contact_email"); postedByName String @map("posted_by_name"); postedByEmail String @map("posted_by_email"); rotaryAffiliation String? @map("rotary_affiliation"); status ListingStatus @default(pending_email); verifyToken String? @unique @map("verify_token"); verifiedById String? @map("verified_by_id"); verifiedAt DateTime? @map("verified_at"); filledAt DateTime? @map("filled_at"); expiresAt DateTime? @map("expires_at"); rejectionReason String? @map("rejection_reason"); createdAt/updatedAt; @@index([status]); @@map("cb_listings") }
+model RideSupportClub { id; ryYear Int @map("ry_year"); clubId String @map("club_id"); capacityDelegates Int @map("capacity_delegates"); homestayAvailable Boolean @map("homestay_available"); preferredMonths Int[] @map("preferred_months"); contactMemberId String? @map("contact_member_id"); contactPhone String @map("contact_phone"); notes String?; createdById String @map("created_by_id"); createdAt/updatedAt; @@unique([ryYear, clubId]); @@map("ride_support_clubs") }
+enum DelegationStatus { planned confirmed completed cancelled }
+model RideDelegation { id; ryYear Int @map("ry_year"); visitingDistrict String @map("visiting_district"); country String; startsAt DateTime @map("starts_at") @db.Date; endsAt DateTime @map("ends_at") @db.Date; headcount Int; contactName String @map("contact_name"); contactEmail String? @map("contact_email"); status DelegationStatus @default(planned); hosts RideDelegationHost[]; createdAt/updatedAt; @@map("ride_delegations") }
+model RideDelegationHost { id; delegationId String @map("delegation_id"); clubId String @map("club_id"); daysHosted Int @map("days_hosted"); membersSent Int @default(0) @map("members_sent"); assignedById String @map("assigned_by_id"); delegation RideDelegation @relation(...onDelete: Cascade); createdAt/updatedAt; @@unique([delegationId, clubId]); @@map("ride_delegation_hosts") }
+model RideGalleryItem { id; year Int; url String; kind String /* photo|video */; caption String?; order Int @default(0); createdAt/updatedAt; @@map("ride_gallery_items") }
+```
+
+---
+
