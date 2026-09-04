@@ -806,6 +806,67 @@ Do these in order; each step ends with green CI and a deploy to staging.
 
 ---
 
+## 14. Caching and performance (locked 2026-09-05)
+
+Rahul: "Website is slow to load. We need to use caching aggressively. Invalidation should happen whenever there is an update without fail. All public pages should be snappy and should not be waiting on database for information. Only some live data fields can have latency, but even for that we can prefetch data every 10 seconds."
+
+Measured baseline (2026-09-05, from Delhi over Cloudflare): `/health` 0.5-3.1s, `/public/*` 0.31-0.67s, `cf-cache-status: DYNAMIC` on every API response (nothing edge-cached), SPA does HTML -> JS -> boot -> fetch as serial round trips. **The dominant cost is round-trip overhead to Oracle, not query time** - so the fix is to stop going to Oracle at all for public reads, and to stop going to Postgres when we do.
+
+### 14.1 Three cache layers (all three are required)
+
+| Layer | Where | Holds | TTL | Invalidated by |
+|---|---|---|---|---|
+| **L1 Edge** | Cloudflare cache rules on `api.rotaract3011.org/public/*` | Full JSON responses | `s-maxage` 600s, `stale-while-revalidate` 86400s | Explicit URL purge via CF API on every write (§14.4) |
+| **L2 Origin** | Redis (`rac3011-redis`), `CacheService` | Serialized response DTOs | 3600s | Same write hook, by tag (§14.4) |
+| **L3 Browser** | TanStack Query + `localStorage` persistence | Query results | `staleTime` 5 min, `gcTime` 24h | Version key + `stale-while-revalidate` refetch |
+
+A public request that hits L1 never reaches Oracle. One that misses L1 but hits L2 never reaches Postgres. Only a cold miss touches the database.
+
+### 14.2 Response headers (exact, per route class)
+
+- **Public, cacheable** (`/public/*` except the two below): `Cache-Control: public, max-age=60, s-maxage=600, stale-while-revalidate=86400` + `Cache-Tag: <tags>` (comma-separated, §14.3) + `Vary: Accept-Encoding`.
+- **Public, live** (`/public/home`'s visitor count, `/public/visits`): the *counter value is split out* of `/public/home` into `GET /public/live` (`Cache-Control: public, max-age=5, s-maxage=5`), so the rest of the home payload stays long-cached. `POST /public/visits` is `no-store`.
+- **Authenticated** (everything else): `Cache-Control: private, no-store`. Never edge-cache anything behind auth - a scoped response leaking across users is the exact failure §4.8 exists to prevent. The Cloudflare cache rule matches only `/public/*` and must additionally bypass cache when a session cookie is present.
+
+### 14.3 Cache tags (the invalidation vocabulary)
+
+One tag per logical dataset, derived from the Prisma model(s) a response reads:
+`clubs`, `zones`, `members`, `projects`, `events`, `heritage`, `district-team`, `achievements`, `partners`, `publications`, `resources`, `content`, `settings`, `initiatives`, `points`, `reports`.
+Each cached endpoint declares its tags with a `@CacheTags(...)` decorator; the interceptor writes both the `Cache-Tag` header and the L2 Redis key's tag-set membership (`SADD tag:<tag> <key>`).
+
+### 14.4 Invalidation - automatic, not remembered
+
+**Requirement: "without fail."** Therefore invalidation is NOT the caller's responsibility. It is derived from writes:
+
+1. A **Prisma client extension** (`src/prisma/cache-invalidation.extension.ts`) wraps every `create|createMany|update|updateMany|upsert|delete|deleteMany` on every model. After a successful write it resolves the model name to its tag(s) via a single `MODEL_TAG_MAP` and enqueues those tags for purge. No service can write to Postgres without this firing - that is the guarantee.
+2. `CacheInvalidator.purge(tags)` then, in one operation: (a) `SMEMBERS tag:<tag>` -> `DEL` every L2 key -> `DEL tag:<tag>`; (b) resolves tags to the concrete public URL list via `TAG_URL_MAP` and calls Cloudflare's purge API. **Cloudflare purge-by-tag requires Enterprise; this account is not, so we purge by URL** (max 30 URLs per call, batch beyond that). `TAG_URL_MAP` must therefore be exhaustive - a route whose URL is missing from it will serve stale edge content, so §14.7's test enumerates every cached route and asserts it appears under at least one tag.
+3. Purges are fire-and-forget through a BullMQ job (`cache.purge`) so a slow Cloudflare API call never blocks a mutation, with retry (3 attempts, exponential) and an error log if it ultimately fails. A failed edge purge is bounded by `s-maxage` (10 min worst case), never permanent.
+4. Seed/migration runs set `CACHE_INVALIDATION=off` to avoid thousands of purges during a reseed, then purge everything once at the end (`purgeAll()` -> CF "purge by prefix" `api.rotaract3011.org/public/`).
+
+### 14.5 Origin speed
+
+- `CacheInterceptor` (L2) checks Redis before the controller body runs; a hit returns without touching services/repositories.
+- Cold-miss cost is reduced by removing per-request `n+1`s in the public module: every `/public/*` repository method is a single query (or one query + one `count`), verified by asserting Prisma query counts in tests.
+- `/public/home` is a single aggregate endpoint (already true) - the frontend must not fan out to five endpoints for the homepage.
+
+### 14.6 Frontend
+
+- `QueryClient` defaults: `staleTime: 5 * 60_000`, `gcTime: 24 * 60 * 60_000`, `refetchOnWindowFocus: false`, `retry: 1`.
+- **Persisted cache**: `@tanstack/query-persist-client-core` + `localStorage`, `buster` = the build's git sha (injected as `VITE_BUILD_SHA`), so a new deploy invalidates client caches without stale-data risk. Repeat visits render instantly from localStorage, then revalidate in the background.
+- **Live fields only**: the visitor counter (and anything else read from `/public/live`) uses `refetchInterval: 10_000` per Rahul's instruction. Nothing else polls.
+- **Prefetch**: `queryClient.prefetchQuery` on nav-link `mouseenter`/`focus` for the target route's primary query, plus prefetch of `/public/clubs` and `/public/projects` after the home page is idle (`requestIdleCallback`).
+- Route-level code splitting (`React.lazy`) for the portal/admin/subdomain trees so the public bundle carries only public pages. The current single eager bundle is ~480 kB; public-only should be well under half.
+- `<link rel="preconnect">` to `api.rotaract3011.org` in `index.html` so the API's TLS handshake overlaps JS parse.
+
+### 14.7 Verification (must exist)
+
+1. Unit: `MODEL_TAG_MAP` covers every Prisma model that any `/public/*` response reads; `TAG_URL_MAP` covers every route registered with `@CacheTags`. Both are exhaustiveness tests that fail when a new model/route is added without a mapping.
+2. e2e: `GET /public/clubs` twice -> second is served from L2 with zero Prisma queries (assert via a query-count spy); then `PATCH /clubs/:id` -> next `GET` reflects the change immediately (proves purge works end to end, with a fake Cloudflare client asserting the purge call carried the right URLs).
+3. e2e: an authenticated route never returns a `Cache-Tag` header and always returns `private, no-store`.
+4. Live check after deploy: `cf-cache-status` must be `HIT` on a second request to `/public/home`, and p50 for that endpoint from India must be under 100 ms (it is ~400 ms today).
+
+---
+
 ## Appendix A. Reference model definitions (unchanged groups)
 
 Models referenced from §3.3 "as in Appendix A". Superseded models (LegacyUserProfile, MonthlyReport, ProjectSubmission, Announcement with legacy columns) are NOT to be used; §3.3 is authoritative where they differ.
