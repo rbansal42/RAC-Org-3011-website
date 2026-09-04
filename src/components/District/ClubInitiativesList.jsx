@@ -7,7 +7,8 @@ export default function ClubInitiativesList({
   onSelectClub,
   isPresidentLoggedIn,
   onOpenPostInitiativeForClub,
-  onOpenUploadClubModal
+  onOpenUploadClubModal,
+  onSelectInitiative
 }) {
   const [hoveredClubId, setHoveredClubId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -235,11 +236,18 @@ export default function ClubInitiativesList({
                     {club.initiatives.map((init, iIdx) => (
                       <div
                         key={iIdx}
+                        onClick={(e) => {
+                          if (onSelectInitiative) {
+                            e.stopPropagation();
+                            onSelectInitiative(club, init);
+                          }
+                        }}
                         style={{
                           background: '#FFFFFF',
                           border: '1px solid #F3E5EB',
                           borderRadius: '12px',
-                          padding: '12px 14px'
+                          padding: '12px 14px',
+                          cursor: onSelectInitiative ? 'pointer' : 'default'
                         }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>

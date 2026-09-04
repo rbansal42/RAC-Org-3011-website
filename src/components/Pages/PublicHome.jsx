@@ -229,16 +229,6 @@ function BigRotaryWheel({ containerRef }) {
   );
 }
 
-const BASE_PROJECTS = [
-  { title: 'Project Alpha', category: 'Category A', subtitle: 'Placeholder Subtitle A', image: 'https://images.unsplash.com/photo-1579154204601-01588f351e67?auto=format&fit=crop&w=1000&q=80', metric: '10,000+ Units', description: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.' },
-  { title: 'Project Beta', category: 'Category B', subtitle: 'Placeholder Subtitle B', image: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1000&q=80', metric: '5,000+ Items', description: 'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.' },
-  { title: 'Project Gamma', category: 'Category C', subtitle: 'Placeholder Subtitle C', image: 'https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=1000&q=80', metric: '1,000+ People', description: 'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.' },
-  { title: 'Project Delta', category: 'Category D', subtitle: 'Placeholder Subtitle D', image: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1000&q=80', metric: '50+ Locations', description: 'Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.' },
-  { title: 'Project Epsilon', category: 'Category E', subtitle: 'Placeholder Subtitle E', image: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=1000&q=80', metric: '200+ Events', description: 'Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam.' },
-  { title: 'Project Zeta', category: 'Category F', subtitle: 'Placeholder Subtitle F', image: 'https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?auto=format&fit=crop&w=1000&q=80', metric: '15,000+ Kits', description: 'Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos.' },
-  { title: 'Project Eta', category: 'Category G', subtitle: 'Placeholder Subtitle G', image: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=1000&q=80', metric: '900+ Matches', description: 'Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam.' }
-];
-
 function ExpandingCarousel() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -270,7 +260,7 @@ function ExpandingCarousel() {
         position: 'relative'
       }}
     >
-      {BASE_PROJECTS.map((proj, idx) => {
+      {FLAGSHIP_SLICES.map((proj, idx) => {
         const isActive = idx === selectedIndex;
         return (
           <div
@@ -333,12 +323,9 @@ function ExpandingCarousel() {
                 {proj.title}
               </h3>
               <p style={{ fontSize: '0.95rem', margin: 0, opacity: 0.9, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.5 }}>
-                {proj.description}
+                {proj.subtitle}
               </p>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', background: 'var(--rotaract-pink)', padding: '4px 10px', borderRadius: '4px' }}>
-                  {proj.category}
-                </span>
                 <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', background: 'rgba(255,255,255,0.2)', padding: '4px 10px', borderRadius: '4px', backdropFilter: 'blur(4px)' }}>
                   {proj.metric}
                 </span>

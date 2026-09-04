@@ -4,6 +4,10 @@ import Footer from './components/Layout/Footer';
 import PublicHome from './components/Pages/PublicHome';
 const DistrictAccess = React.lazy(() => import('./components/Pages/DistrictAccess'));
 const PortalPage = React.lazy(() => import('./components/Pages/PortalPage'));
+import ClubDetail from './components/Pages/ClubDetail';
+import ShowcaseDetail from './components/Pages/ShowcaseDetail';
+import DRRProfile from './components/Pages/DRRProfile';
+import { PAST_DRRS } from './data/districtData';
 import LoginModal from './components/Modals/LoginModal';
 import PresidentModal from './components/Modals/PresidentModal';
 import { INITIAL_CLUBS } from './data/districtData';
@@ -73,6 +77,9 @@ export default function App() {
 
     setActivePageState(page);
     setActiveDistrictTabState(targetTab);
+    setClubDetailId(null);
+    setInitiativeDetail(null);
+    setDrrDetailId(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     const path = getPathFromState(page, targetTab);
@@ -86,6 +93,9 @@ export default function App() {
 
     setActivePageState('district');
     setActiveDistrictTabState(tab);
+    setClubDetailId(null);
+    setInitiativeDetail(null);
+    setDrrDetailId(null);
 
     const path = getPathFromState('district', tab);
     if (window.location.pathname !== path) {
@@ -173,6 +183,11 @@ export default function App() {
   });
   const [isLoggedIn, setIsLoggedIn] = useState(() => Boolean(userSession));
   const [userRole, setUserRole] = useState(() => userSession?.role || null);
+
+  // District Detail Sub-Views (Club Profile / Initiative / Past DRR)
+  const [clubDetailId, setClubDetailId] = useState(null);
+  const [initiativeDetail, setInitiativeDetail] = useState(null);
+  const [drrDetailId, setDrrDetailId] = useState(null);
 
   // Modals
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -333,18 +348,50 @@ export default function App() {
               </div>
             </div>
           }>
-            <DistrictAccess
-              clubs={clubs}
-              activeDistrictTab={activeDistrictTab}
-              isLoggedIn={isLoggedIn}
-              userRole={userRole}
-              onOpenLoginModal={() => setIsLoginModalOpen(true)}
-              onOpenUploadClubModal={() => setUploaderModalMode('uploadClub')}
-              onOpenPostInitiativeModal={(club) => {
-                setPreselectedClubForModal(club);
-                setUploaderModalMode('postInitiative');
-              }}
-            />
+            {clubDetailId ? (
+              <ClubDetail
+                club={clubs.find((c) => c.id === clubDetailId)}
+                onBack={() => setClubDetailId(null)}
+                onNavigateInitiatives={() => {
+                  setClubDetailId(null);
+                  handleDistrictTabChange('initiatives');
+                }}
+              />
+            ) : initiativeDetail ? (
+              <ShowcaseDetail
+                club={initiativeDetail.club}
+                initiative={initiativeDetail.initiative}
+                allClubs={clubs}
+                onBack={() => setInitiativeDetail(null)}
+                onOpenClubProfile={(id) => {
+                  setInitiativeDetail(null);
+                  setClubDetailId(id);
+                }}
+              />
+            ) : drrDetailId ? (
+              <div style={{ background: 'linear-gradient(180deg, #D81B60 0%, #AD1457 100%)', minHeight: 'calc(100vh - 70px)', padding: '40px 24px 80px 24px' }}>
+                <DRRProfile
+                  drr={PAST_DRRS.find((d) => d.id === drrDetailId)}
+                  onBack={() => setDrrDetailId(null)}
+                />
+              </div>
+            ) : (
+              <DistrictAccess
+                clubs={clubs}
+                activeDistrictTab={activeDistrictTab}
+                isLoggedIn={isLoggedIn}
+                userRole={userRole}
+                onOpenLoginModal={() => setIsLoginModalOpen(true)}
+                onOpenUploadClubModal={() => setUploaderModalMode('uploadClub')}
+                onOpenPostInitiativeModal={(club) => {
+                  setPreselectedClubForModal(club);
+                  setUploaderModalMode('postInitiative');
+                }}
+                onOpenClubProfile={(id) => setClubDetailId(id)}
+                onOpenInitiativeDetail={(club, initiative) => setInitiativeDetail({ club, initiative })}
+                onOpenDRRProfile={(drr) => setDrrDetailId(drr.id)}
+              />
+            )}
           </Suspense>
         )}
 

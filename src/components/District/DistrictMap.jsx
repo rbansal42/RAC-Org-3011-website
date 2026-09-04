@@ -115,7 +115,7 @@ export const REGIONAL_ZONES = [
   }
 ];
 
-export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }) {
+export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub, onViewClubProfile }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersRef = useRef([]);
@@ -1027,6 +1027,25 @@ export default function DistrictMap({ clubs = [], selectedClubId, onSelectClub }
                     </div>
                   )}
                 </div>
+
+                {onViewClubProfile && (
+                  <button
+                    onClick={() => onViewClubProfile(currentSlideoutClub.id)}
+                    style={{
+                      background: 'var(--rotaract-pink)',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      borderRadius: '10px',
+                      padding: '10px 16px',
+                      fontSize: '0.82rem',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      width: '100%'
+                    }}
+                  >
+                    View Full Club Profile
+                  </button>
+                )}
 
               </div>
 
