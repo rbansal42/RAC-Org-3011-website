@@ -19,7 +19,7 @@ Companion documents (read only when this spec points you to them):
 7. Every notification goes through `NotificationPort.notify()` (§7). No module imports an email or push SDK directly.
 8. Audit log rows (§4.6) are written for every action listed in §4.6.
 9. No code comments unless they explain a constraint that is not visible in the code. No commented-out code.
-10. Tests: each task below is done when its listed tests pass. Do not mark a task done without running the test command and reading the output.
+10. Tests: each task below is done when its listed tests pass. Do not mark a task done without running the test command and reading the output. **CI does not run tests** (removed 2026-09-04 for deploy speed - "Remove testing from CI. I want deploys to be faster. Test locally before pushing."): CI is build-image-and-deploy only. Every task, every agent, runs the full local suite by hand before every push - `npm run lint && npx prisma validate && npm run test && npm run test:e2e` (api), `npx tsc -b && npm test && npm run build && npx playwright test` (web) - and only pushes once it's green. A broken build is now only caught by the Docker image failing to compile, not by CI, so this is not optional.
 11. Commits: one per task, message `feat(<module>): <what>` / `test(...)` / `chore(...)`. No trailer lines.
 12. Files under 300 lines. Split by responsibility.
 13. Frontend: no UI library (no HeroUI, shadcn, MUI, Radix, Headless UI). Build the primitives in §9.3. Tailwind v4 utility classes only; no inline `style=` except for dynamic values (e.g. `--accent`).
