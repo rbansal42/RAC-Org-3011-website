@@ -865,6 +865,27 @@ Each cached endpoint declares its tags with a `@CacheTags(...)` decorator; the i
 3. e2e: an authenticated route never returns a `Cache-Tag` header and always returns `private, no-store`.
 4. Live check after deploy: `cf-cache-status` must be `HIT` on a second request to `/public/home`, and p50 for that endpoint from India must be under 100 ms (it is ~400 ms today).
 
+### 14.8 Origin path: Cloudflare Tunnel (decided 2026-09-05)
+
+Diagnosis (measured from Delhi): Cloudflare serves this zone from **Singapore** (`cf-ray: …-SIN`; the free plan gets no India PoP), while the origin sits ~30 ms away in India. Requests therefore detour Delhi → Singapore → India → Singapore → Delhi. Cold request 520-580 ms, warm-connection request 141 ms, direct-to-origin 135 ms, origin app time ~30 ms. **~380 ms of the cold cost is TCP+TLS setup, not transfer.**
+
+Rahul's decision: **Cloudflare Tunnel (free)**, not Argo (paid) and not un-proxying (which would forfeit WAF and edge cache).
+
+- `cloudflared` runs on the Oracle box as a systemd service (ARM64 build), holding persistent, pre-warmed QUIC connections to Cloudflare's edge. This removes the per-request CF→origin TCP+TLS handshake, which is the dominant share of the cold-request cost.
+- Create the tunnel through the **API**, not `cloudflared tunnel login` (that needs an interactive browser): `POST /accounts/{account_id}/cfd_tunnel` → run with `cloudflared tunnel run --token <token>`. Account `6df5d6f65155cc519f481070550102fc`.
+- Ingress maps `api.rotaract3011.org` and `testing.rotaract3011.org` to the existing local Traefik entrypoint. DNS for those two hostnames changes from proxied `A → 92.4.95.94` to the tunnel `CNAME → <tunnel-id>.cfargotunnel.com` (proxied).
+- **Scope limit:** only those two hostnames. Every other app on this box (racddl, healing-pouch, house-of-urve, bliss, rotaract-os, …) keeps its current proxied-A + Traefik path untouched. Record the prior A-record values so the change is reversible in one API call.
+- Success criterion: cold `GET /public/home` materially below today's ~550 ms, and `cf-cache-status: HIT` still working on a second request (the tunnel must not break edge caching).
+
+### 14.9 Prerendered public pages (decided 2026-09-05, sequenced after §14.1-14.7)
+
+Rahul approved prerendering the public pages **after** the caching layers land. Rationale: caching removes the origin round trip but the SPA still does HTML → JS → boot → fetch before first paint. Prerendering makes content arrive in the first response.
+
+- Approach: build-time prerender of every static-content public route to real HTML (`vite-plugin-ssg`-style, or a small Puppeteer/`@prerenderer` pass over the built SPA), hydrating client-side afterwards. Keep the SPA for portal/admin/subdomain trees.
+- Data at prerender time comes from the same `/public/*` endpoints; the emitted HTML therefore embeds a snapshot, and the client revalidates via the §14.6 query layer, so a stale snapshot self-corrects on hydrate.
+- Routes with genuinely per-request data (`/public/live` counter) stay client-fetched inside otherwise-prerendered pages.
+- Not started until §14.1-14.7 are deployed and re-measured.
+
 ---
 
 ## Appendix A. Reference model definitions (unchanged groups)
