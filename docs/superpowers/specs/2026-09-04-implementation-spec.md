@@ -887,6 +887,36 @@ Retry plan (do NOT cut production DNS blind again):
 3. Only then move `api.` and `testing.`, one at a time, with the prior A values recorded for instant rollback.
 4. Re-measure cold/warm before deciding to keep it.
 
+**ATTEMPT 2 SUCCEEDED (2026-09-04/05, same session day) - the root cause above was
+wrong, correcting the record.** Re-ran with the identical ingress
+(`service: https://127.0.0.1:443` + `originServerName`/`httpHostHeader`, no
+`noTLSVerify`, no throwaway hostname) against the **same** tunnel resource
+(`9e53fcd1-9627-45a4-800a-598586f8d92c` - creating a tunnel with a name that already
+exists and isn't deleted returns the existing tunnel, it does not error or fork a new
+one) and both hostnames eventually returned clean `200`s with correct content. TLS to
+Traefik was never the problem: `openssl s_client -connect 127.0.0.1:443 -servername
+api.rotaract3011.org` on the Oracle box returns a real, valid Let's Encrypt cert
+(`CN=api.rotaract3011.org`), and a local `curl -sk https://127.0.0.1:443/health -H
+'Host: api.rotaract3011.org'` succeeded in 11ms *throughout* the period both hostnames
+were 530ing publicly - so the origin was never unreachable or TLS-invalid.
+
+The actual cause was **Cloudflare edge routing-propagation lag after a DNS cutover or a
+`cloudflared` (re)start** - observed twice: ~8 minutes after the initial DNS cutover,
+and again for ~5 minutes after a live diagnostic restart of `cloudflared` broke the
+*already-working* `testing.` hostname too. The tunnel API reported `healthy`/4
+connections within seconds both times; the edge's per-hostname routing state took
+minutes longer to catch up globally. Attempt 1 most likely rolled back during that same
+propagation window rather than hitting a real config defect - **the retry plan above
+(`noTLSVerify`, throwaway hostname, one-at-a-time) is unnecessary** for a future
+attempt on this stack; the config that failed in Attempt 1 is the config that works.
+The one operationally important lesson that *is* still valid: **don't restart
+`cloudflared` casually** - budget ~5 minutes of possible 530s on both hostnames after
+any restart, and push ingress changes via the remote `configurations` API (picked up
+live, no restart) instead of touching the service where avoidable. Full verification
+(40/40 clean requests, `cf-cache-status: HIT` on repeat `/public/home`, CORS intact,
+before/after latency) and the rollback recipe are in `docs/infra.md` under "Cloudflare
+Tunnel (`rac3011-oracle`)". Kept live, not rolled back.
+
 ### 14.9 Prerendered public pages (decided 2026-09-05, sequenced after §14.1-14.7)
 
 Rahul approved prerendering the public pages **after** the caching layers land. Rationale: caching removes the origin round trip but the SPA still does HTML → JS → boot → fetch before first paint. Prerendering makes content arrive in the first response.
