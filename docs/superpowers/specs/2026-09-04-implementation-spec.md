@@ -877,6 +877,16 @@ Rahul's decision: **Cloudflare Tunnel (free)**, not Argo (paid) and not un-proxy
 - **Scope limit:** only those two hostnames. Every other app on this box (racddl, healing-pouch, house-of-urve, bliss, rotaract-os, …) keeps its current proxied-A + Traefik path untouched. Record the prior A-record values so the change is reversible in one API call.
 - Success criterion: cold `GET /public/home` materially below today's ~550 ms, and `cf-cache-status: HIT` still working on a second request (the tunnel must not break edge caching).
 
+**ATTEMPT 1 FAILED AND WAS ROLLED BACK (2026-09-05).** The tunnel was created (`9e53fcd1-9627-45a4-800a-598586f8d92c`, 4 QUIC connections registered to bom03/06/08/11 - correctly Mumbai, which confirms the tunnel would have fixed the Singapore detour), DNS was cut to the tunnel CNAME, and **both hostnames immediately returned HTTP 530** (Cloudflare cannot reach origin). Production was down until DNS was reverted to proxied `A -> 92.4.95.94`; both hosts verified restored at content level, and `cloudflared` is now `disabled --now` so it cannot half-serve.
+
+Root cause: the ingress pointed at `service: https://127.0.0.1:443` with `originServerName`/`httpHostHeader` set. Port 443 on that box is Dokploy's Traefik via docker-proxy; cloudflared's TLS handshake to it does not validate (Traefik presents a cert for the requested host from its own ACME store, and the origin-facing path is not what cloudflared expects), so no origin connection was ever established - hence 530 rather than a 404 passthrough.
+
+Retry plan (do NOT cut production DNS blind again):
+1. Add `noTLSVerify: true` to each ingress rule (or terminate at plain HTTP and stop Traefik's 80->443 redirect for tunnel traffic; port 80 currently answers `301`, which would loop).
+2. Validate against a **throwaway hostname** (`tunnel-test.rotaract3011.org` -> tunnel CNAME) and confirm 200 + correct content there first.
+3. Only then move `api.` and `testing.`, one at a time, with the prior A values recorded for instant rollback.
+4. Re-measure cold/warm before deciding to keep it.
+
 ### 14.9 Prerendered public pages (decided 2026-09-05, sequenced after §14.1-14.7)
 
 Rahul approved prerendering the public pages **after** the caching layers land. Rationale: caching removes the origin round trip but the SPA still does HTML → JS → boot → fetch before first paint. Prerendering makes content arrive in the first response.
