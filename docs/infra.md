@@ -53,6 +53,16 @@ Before any of the work below could start, the shared VPS (`15.235.211.41`, Dokpl
      `false` by default (blocks everything except project/application create until
      patched via SQL), and the default API key has `rateLimitMax: 10` per 24h which is
      exhausted almost immediately by scripted provisioning.
+- Attempted one more low-risk, obviously-good step: `docker start postgres` (the old
+  shared standalone container, not a swarm service) to bring the other apps' actual
+  database data back online. It failed: `Could not attach to network
+  mk4lbq0bni3v6wfokhslvw44b: network ... not found` — the container's saved config
+  references a Docker network id that no longer exists (recreated during the incident).
+  Fixing this means recreating the container from
+  `/home/ubuntu/databases/docker-compose.yml` (`docker compose up -d` in that
+  directory), which is exactly the kind of "reconstruct shared VPS state" work this note
+  flags as out of scope for this task — left undone, first thing to try in the
+  follow-up recovery.
 - **Action needed from Rahul**: decide whether/when to do the full re-registration of
   every other app in the fresh Dokploy (their containers may still be recoverable, but
   none are currently reachable via `*.racddl.com`, `*.rbansal.xyz` app subdomains routed
