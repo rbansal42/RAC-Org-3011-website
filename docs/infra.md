@@ -1,234 +1,335 @@
 # RAC District 3011 Platform — Deployment Infrastructure
 
-Provisioned 2026-09-04. Covers the new `rac3011-api` / `rac3011-worker` / `rac3011-web`
-stack (per implementation spec §11) on the shared VPS Dokploy instance, plus the
-Postgres backup jobs on the Oracle box that already hosts `rac3011-postgres`.
+Provisioned 2026-09-04 (Oracle), correcting a same-day VPS-targeting attempt that is now
+superseded. Covers the `rac3011-api` / `rac3011-worker` / `rac3011-web` stack (per
+implementation spec §11) on the Oracle Dokploy instance, which already hosts the
+`rac3011-postgres` database and the daily/15-min backup cron. Same-day, the platform's
+GitHub org and public domain also changed (`rbansal42` → `round-robin-solutions`,
+`staging-v2.rotaract3011.org` → `testing.rotaract3011.org`) — see "GitHub org + domain
+migration" below for that reconciliation.
 
 **Do not treat this file as containing secrets.** Real values (passwords, API keys,
 generated secrets) live in `~/.claude/secrets.md` under "RAC District 3011 Platform —
-deployment secrets — 2026-09-04" and in Obsidian `Keychain/RAC 3011 Website Deployment`.
+Dokploy project + apps (rac3011)" and in Obsidian `Keychain/RAC 3011 Website Deployment`.
 This file records ids, hostnames, and structure so infra can be reasoned about and
 reproduced without re-deriving it from scratch.
 
-## Critical incident found and fixed during provisioning
+## Superseded: the VPS attempt
 
-Before any of the work below could start, the shared VPS (`15.235.211.41`, Dokploy at
-`dokploy.rbansal.xyz`) was found completely down:
+Rahul decided the shared VPS (`15.235.211.41`, Dokploy at `dokploy.rbansal.xyz`) is being
+decommissioned entirely and moved everything to the Oracle Cloud instance instead. A
+same-day prior task had already provisioned a `rac3011` Dokploy project on the VPS
+(projectId `LKsHHKk5Do5iQE18DfKrL`, apps `rac3011-api`/`rac3011-worker`/`rac3011-web`,
+DNS for `api.` and `staging-v2.` pointed at the VPS, nginx vhosts on the VPS) — all of
+that is now moot. It was **not** cleaned up (VPS Dokploy was left untouched entirely, per
+explicit instruction not to operate on a box being decommissioned separately); it will go
+away along with the rest of the VPS. If the VPS is ever revisited before decommission,
+that orphaned project can be deleted via its Dokploy API, but this is not worth doing on
+its own.
 
-- Root cause: the disk filled to 100% around 2026-09-04 13:30 UTC (`docker pull` /
-  `rsyslog` both logging "No space left on device"). Something then ran aggressive
-  cleanup to reclaim space — very likely the prior, dead attempt at this exact task —
-  which removed **every Docker Swarm service** (Dokploy itself, and all ~10 apps it was
-  running: racddl-admin, healing-pouch api/web, house-of-urve, bliss, rotaract-os
-  api/worker, rotary-directory, itni-si-muskurahat-website, mindweal, theanasa, etc.)
-  and pruned unused volumes/images. It also left `/etc/wireguard/wg0.conf` renamed to
-  `wg0.conf.bak` on both the VPS and the Oracle box, tearing down the WireGuard tunnel
-  this task's Postgres connectivity depends on.
-- Disk itself had already been freed by the time this was discovered (46% used, 39G
-  free) — the cleanup worked, it just never got un-done.
-- **Data was not lost.** The shared Postgres container's volume
-  (`databases_postgres_data`, holding all 10 app databases) survived on disk and was
-  restarted. Dokploy's *own* control-plane database (`dokploy-postgres` volume — every
-  project/app/domain/env-var definition across the whole VPS) did **not** survive and
-  had to be reinstalled from scratch, which means **every pre-existing Dokploy app
-  needs to be re-registered** (new project/app/domain/env entries pointing at the
-  already-running or restartable containers/images). That re-registration work is
-  **not done** — it's a separate, large recovery task, out of scope here, and should be
-  treated as high priority.
-- What was fixed as part of unblocking this task:
-  1. Restored `/etc/wireguard/wg0.conf` from `.conf.bak` on both `vps` and `oracle`,
-     brought `wg-quick@wg0` back up on both, and enabled it at boot (`systemctl enable`)
-     on both — it was previously enabled nowhere, meaning a reboot would have dropped
-     the tunnel silently. Verified: `ping 10.44.44.2` and `nc -vz 10.44.44.2 5434` both
-     succeed from the VPS.
-  2. Reinstalled Dokploy on the VPS using the original bootstrap script
-     (`/home/ubuntu/bootstrap-dokploy-alt-ports.sh`, the same idempotent installer used
-     to originally set it up) — dashboard port 3400, Traefik on 18080/18443, same as
-     before. This is a **fresh, empty** Dokploy install (new `dokploy-postgres`,
-     `dokploy-redis`, `dokploy` swarm services) — the old API key in secrets.md for
-     `dokploy.rbansal.xyz` is dead; a new admin user and API key were created (see
-     secrets.md).
-  3. Discovered and fixed two Dokploy bugs/gotchas hit along the way (see "Gotchas"
-     below): the API-registered admin's `member` row has all permission booleans
-     `false` by default (blocks everything except project/application create until
-     patched via SQL), and the default API key has `rateLimitMax: 10` per 24h which is
-     exhausted almost immediately by scripted provisioning.
-- Attempted one more low-risk, obviously-good step: `docker start postgres` (the old
-  shared standalone container, not a swarm service) to bring the other apps' actual
-  database data back online. It failed: `Could not attach to network
-  mk4lbq0bni3v6wfokhslvw44b: network ... not found` — the container's saved config
-  references a Docker network id that no longer exists (recreated during the incident).
-  Fixing this means recreating the container from
-  `/home/ubuntu/databases/docker-compose.yml` (`docker compose up -d` in that
-  directory), which is exactly the kind of "reconstruct shared VPS state" work this note
-  flags as out of scope for this task — left undone, first thing to try in the
-  follow-up recovery.
-- **Action needed from Rahul**: decide whether/when to do the full re-registration of
-  every other app in the fresh Dokploy (their containers may still be recoverable, but
-  none are currently reachable via `*.racddl.com`, `*.rbansal.xyz` app subdomains routed
-  through Dokploy/Traefik — anything served by host nginx directly, like
-  `dokploy.rbansal.xyz` itself or `*.rbansal.xyz` static sites, is unaffected).
+Note: the VPS-side `docs/infra.md` predecessor (this file's previous revision) also
+recorded a detailed "critical incident" — a disk-full event on the VPS that allegedly
+wiped Dokploy and took down racddl-admin, healing-pouch, house-of-urve, bliss,
+rotaract-os, rotary-directory, itni-si-muskurahat, etc. This directly conflicts with what
+this session verified independently: all of those exact apps are healthy and running on
+**Oracle's** Dokploy (`dokploy2.rbansal.xyz`), confirmed via `docker service ls` showing
+every one of them `1/1` and via each app's live domain serving traffic. That incident
+narrative was not re-verified against the VPS (out of scope — VPS was not touched at
+all this session) and should not be trusted at face value; it's flagged here rather than
+silently dropped, since whoever wrote it may have been confused about which box hosts
+what, or the VPS may genuinely be in that state independent of Oracle.
 
 ## Hosts
 
 | Alias | Host | Role |
 |---|---|---|
-| `vps` | `15.235.211.41` (`ubuntu@`) | Dokploy, Traefik, host nginx, shared Postgres |
-| `oracle` | `92.4.95.94` (`ubuntu@`) | `rac3011-postgres` container, Dokploy #2 (unrelated, for photodump-server), backup cron |
+| `oracle` | `92.4.95.94` (`ubuntu@`) | Dokploy #2 (`dokploy2.rbansal.xyz`), `rac3011-postgres`, `rac3011` project, backup cron |
 
-SSH: `ssh vps`, `ssh oracle` (both use `~/.ssh/id_ed25519`, aliases already in
-`~/.ssh/config`). `oracle` needs `sudo` for all `docker` commands (ubuntu user not in
-the docker group there); `sudo -n true` succeeds (passwordless). The `vps` SSH config
-has a stray `LocalForward 5432 localhost:5432` that fails locally if port 5432 is
-already bound on your machine — harmless, just add `-o ClearAllForwardings=yes` to avoid
-the noisy warning.
+SSH: `ssh oracle` (`~/.ssh/id_ed25519`, alias in `~/.ssh/config`). `oracle` needs `sudo`
+for all `docker` commands (ubuntu user not in the docker group); `sudo -n true` succeeds
+(passwordless).
 
-WireGuard tunnel: `vps` `10.44.44.1/30` ↔ `oracle` `10.44.44.2/30`, UDP 51820. Postgres
-on Oracle (`rac3011-postgres`, `postgres:18`) is bound to the WireGuard interface only,
-reachable from the VPS as `10.44.44.2:5434`.
+Oracle also runs Dokploy's own swarm cluster hosting racddl-admin, healing-pouch
+api/web, house-of-urve (+staging), bliss, rotaract-os api/worker/web/redis,
+rotary-directory, itni-si-muskurahat, anasa, arteo, rotaract-world, photodump-server,
+and others — all confirmed `Up`/`1/1` this session. **None of these were modified.**
+Their config was read-only inspected (via `application.one`) purely to determine the
+Postgres connection pattern and to confirm the GHCR registry credential to reuse.
 
-## Dokploy
+## Dokploy (Oracle)
 
-- Dashboard: `https://dokploy.rbansal.xyz` (also `http://127.0.0.1:3400` on the VPS
-  itself). **Known gotcha**: calling the Dokploy REST API (`x-api-key` header) through
-  the public `dokploy.rbansal.xyz` hostname (Cloudflare-proxied) reliably returns
-  `{"message":"Unauthorized"}` even with a valid key — confirmed the header reaches
-  Cloudflare fine (not cached, `cf-cache-status: DYNAMIC`) but something between
-  Cloudflare and the origin drops/mangles it for API calls specifically (UI login via
-  cookie works fine over the same hostname). Workaround used throughout this task: run
-  API calls from **inside** the VPS against `http://127.0.0.1:3400`, or `curl --resolve
-  dokploy.rbansal.xyz:443:15.235.211.41` from outside to bypass Cloudflare. Worth a
-  follow-up investigation (Cloudflare Transform Rule / WAF rule stripping custom
-  headers on this zone?) but out of scope here.
-- Org: `oqPLR6ZoDyXvFxUES9Lyh` ("My Organization"), owner user `rahul@hudle.in` (id
-  `7mT4pMcB0qLnyasloTMyU4JZj1TuXQwf`).
-- **Gotcha 1 — owner permissions**: registering the first admin via the raw
-  `/api/auth/sign-up/email` endpoint (bypassing the UI onboarding wizard) creates a
-  `member` row with role `owner` but **every permission boolean set to `false`**
-  (`canCreateServices`, `canAccessToAPI`, `canAccessToDocker`, etc.). This silently
-  blocks most mutations (`redis.create` etc. return `401 Unauthorized`) while
-  `project.create`/`application.create` work fine (those checks apparently bypass the
-  flags for the org owner, others don't). Fixed by hand: `UPDATE member SET
-  "canCreateProjects"=true, "canAccessToSSHKeys"=true, "canCreateServices"=true,
-  "canDeleteProjects"=true, "canDeleteServices"=true, "canAccessToDocker"=true,
-  "canAccessToAPI"=true, "canAccessToGitProviders"=true, "canAccessToTraefikFiles"=true,
-  "canDeleteEnvironments"=true, "canCreateEnvironments"=true WHERE role='owner';` against
-  the `dokploy-postgres` service. If this Dokploy instance is ever re-registered from
-  scratch again, redo this step (or register through the actual web UI instead, which
-  presumably sets these correctly — not verified either way).
-- **Gotcha 2 — API key rate limit**: keys created via `user.createApiKey` default to
-  `rateLimitEnabled: true, rateLimitMax: 10` per 24h window, which a scripted
-  provisioning session exhausts in minutes (`Error verifying API key: Rate limit
-  exceeded` in the `dokploy` container logs, surfaced to the client as a plain
-  `{"message":"Unauthorized"}` with no rate-limit-specific wording). Pass
-  `"rateLimitEnabled": false` when creating keys meant for automation.
-- Two API keys exist in the fresh instance: an initial rate-limited one
-  (`rac3011-provisioning`) and the one actually used for all provisioning
-  (`rac3011-provisioning-2`, rate limiting disabled) — value in secrets.md.
+- Dashboard: `https://dokploy2.rbansal.xyz` (nominally; see gotcha below — currently only
+  reliably reachable from inside Oracle via `http://127.0.0.1:3000`).
+- API key: value in secrets.md ("RAC District 3011 Platform — Dokploy project + apps
+  (rac3011)"), sent as `x-api-key`. This is the **same key already used** for the
+  photodump-server Dokploy provisioning on this instance (per
+  `Keychain`/secrets.md "photodump-server — Dokploy deployment (Oracle)") — reused, not
+  regenerated.
+- **Gotcha — public dashboard hostname is currently broken.** `https://dokploy2.rbansal.xyz/*`
+  returns a plain-text `404 page not found` (Traefik's own default-backend response, not
+  Dokploy's JSON error format) for both UI and API paths. Root cause: the host `nginx`
+  that used to proxy `443 → 127.0.0.1:3000` for this hostname was stopped and disabled
+  today (`systemctl` shows `Stopped nginx.service` at `2026-09-04T07:21:13Z`, before this
+  session started) in favor of Dokploy's Traefik binding directly to host ports 80/443 for
+  all app domains (confirmed: `dokploy-traefik` container publishes `0.0.0.0:80` and
+  `0.0.0.0:443` directly, `nginx.service` is `inactive`/`disabled`). Traefik has no route
+  registered for the dashboard's own hostname (it only routes domains explicitly added via
+  `domain.create` on applications), so the dashboard itself 404s publicly. This is a
+  **pre-existing gap, not introduced by this task** — every API call in this task's
+  provisioning was made by SSHing into Oracle and hitting `http://127.0.0.1:3000/api/*`
+  directly, the same workaround pattern documented for the VPS's similar (but
+  differently-caused) "public API broken" issue. Not fixed here — it's shared
+  control-plane routing that affects every app's dashboard access on this box, out of
+  this task's scope. Follow-up: either register `dokploy2.rbansal.xyz` as a Traefik file-
+  provider route, or re-enable nginx on a port Traefik doesn't own.
 
 ## Dokploy project `rac3011`
 
-- `projectId`: `LKsHHKk5Do5iQE18DfKrL`
-- `environmentId` (default "production" env): `mDVrGYEGSC06ZbiepbWv6`
+- `projectId`: `LZtk_0V6xvKx0mUFDnIzn`
+- `environmentId` (default "production" env): `nNzCRHCyT1N0PtPwmT4FH`
 
-| App | `applicationId` | `appName` (container/service name) | sourceType | Domain | Status |
+| App | `applicationId` | `appName` | Image | Domain | Status (2026-09-04, post org/domain migration) |
 |---|---|---|---|---|---|
-| rac3011-api | `5pR_aSFCJ9PDSjLmzTfrX` | `rac3011-api-hspenz` | docker, `ghcr.io/rbansal42/rac3011-api:main` | `api.rotaract3011.org` (port 3000, https:false — TLS terminated upstream) | `error` — image doesn't exist on GHCR yet (`denied` on pull; repo not pushed) |
-| rac3011-worker | `OjbHmUkMXAawAbpbbACWy` | `rac3011-worker-evhnwx` | docker, same image, env `WORKER=1` | none | `error` — same reason |
-| rac3011-web | `3OMmWFuEepO0hou8B0evs` | `rac3011-web-5rip9n` | git (custom SSH), `git@github.com:rbansal42/rac3011-web.git` branch `main` | `staging-v2.rotaract3011.org` (port 80, https:false) | idle — not deployed yet, repo doesn't exist on GitHub yet either |
+| rac3011-api | `0eZ3PUE32RMTbbcolNKRT` | `rac3011-api-ybwq5j` | `ghcr.io/round-robin-solutions/rac3011-api:main` | `api.rotaract3011.org` (port 3000) | pulls and starts, then **crash-loops**: Prisma `Error: P3005 The database schema is not empty` (needs a migration baseline). App/DB issue, not GHCR — `/health` 502s |
+| rac3011-worker | `sV4bTThhBQEsebPTBHibc` | `rac3011-worker-0zu2rf` | same image, env `WORKER=1` | none | same crash-loop, same reason |
+| rac3011-web | `09a5zLs62V25Wdl6dF2KX` | `rac3011-web-otgv0w` | `ghcr.io/round-robin-solutions/rac3011-web:main` | `testing.rotaract3011.org` (port 80, changed from `staging-v2.rotaract3011.org`) | **live**, `1/1` running, `curl -I https://testing.rotaract3011.org/` → `200` |
 
-Redis service: `rac3011-redis`, `redisId` `qgyRRHRjTAY-Z5_ZIfm_k`, container/service name
-`rac3011-redis-agyau9`, image `redis:7`, no published port (internal `dokploy-network`
-only). Confirmed running (`docker service ls` shows `1/1`).
-`REDIS_URL=redis://:<password>@rac3011-redis-agyau9:6379` (password in secrets.md).
+### GitHub org + domain migration (2026-09-04)
 
-SSH key for the web app's git source: Dokploy `sshKeyId` `AnhSGs0N1VQMbdpJJljto`
-(`rac3011-web-deploy-key`), ed25519, **public half not yet added anywhere** because the
-`rbansal42/rac3011-web` repo doesn't exist on GitHub yet (confirmed via `gh repo view` —
-404). Public key:
+The district platform's GitHub org and public domain changed same-day, after the above
+was first provisioned:
+
+- **GitHub org**: `rbansal42/rac3011-api` and `rbansal42/rac3011-web` → new private repos
+  `round-robin-solutions/rac3011-api` and `round-robin-solutions/rac3011-web`, full git
+  history pushed. The old personal repos still exist on GitHub untouched, with local
+  remotes named `rbansal42-old` (at `/Volumes/Code/rac3011-api` and
+  `/Volumes/Code/rac3011-web`).
+- **CI rewritten** on both new repos to the same Blacksmith ARM64-only pattern every
+  other app on this Dokploy instance uses (`round-robin-solutions/racddl`'s
+  `.github/workflows/deploy.yml` was the reference): `runs-on:
+  blacksmith-4vcpu-ubuntu-2404-arm`, `useblacksmith/setup-docker-builder@v1`,
+  `useblacksmith/build-push-action@v2`, `platforms: linux/arm64` only (no amd64, no
+  QEMU — the earlier VPS-era workflow used QEMU multi-arch, which this session's CI
+  history shows had timeout problems). Both repos got a new `saveDockerProvider`+
+  `redeploy` step gated on `vars.DOKPLOY_BASE_URL != ''`.
+- **Image paths** now `ghcr.io/round-robin-solutions/rac3011-api` and
+  `.../rac3011-web`.
+- **Repo vars/secrets** set on both new org repos: `DOKPLOY_API_KEY` (secret),
+  `DOKPLOY_BASE_URL=https://dokploy2.rbansal.xyz` (var), plus
+  `DOKPLOY_API_APPLICATION_ID`/`DOKPLOY_WORKER_APPLICATION_ID` (rac3011-api) and
+  `DOKPLOY_WEB_APPLICATION_ID` (rac3011-web).
+- **Domain**: the `rac3011-web` Dokploy application's domain record (`domainId`
+  `RoDUqKi4pDuftV4_0T2FS`) was updated in place from `staging-v2.rotaract3011.org` to
+  `testing.rotaract3011.org` via `domain.update` (same `certificateType: letsencrypt`
+  pattern as every other domain on this instance — see "TLS / routing" below, unchanged).
+  This is Rahul's new requirement: the app lives at `testing.rotaract3011.org`, not
+  `staging-v2.`.
+- **DNS**: Cloudflare A record for `testing.rotaract3011.org` (zone
+  `1fa583748a2c53c135ffb75c543225b0`, record id `494729a16f748a0e1159263c5febc7e9`) was
+  repointed from `15.235.211.41` (the decommissioned VPS, where it used to serve the
+  *old legacy* `rbansal42/RAC-Org-3011-website` site) to Oracle's `92.4.95.94`. The old
+  `staging-v2.rotaract3011.org` A record was **left in place** (still resolves to
+  Oracle) even though Dokploy no longer has a domain record routing that hostname — low
+  priority per Rahul, conservative choice documented in `docs/decisions.md`. `api.` and
+  the legacy production `rotaract3011.org`/`staging.` (Vercel) were untouched.
+
+#### GHCR access — resolved, no visibility change needed
+
+The task assumed the existing GHCR pull credential might not have read access to
+`round-robin-solutions`-owned packages once the repos moved into the org, and offered a
+fallback of making the packages "internal"/org-visible if genuinely blocked. **Neither
+was needed.** Verified by testing directly rather than guessing:
+
+- `rbansal42` (the Dokploy registry credential's username) is confirmed an **org admin**
+  (owner-tier) of `round-robin-solutions`: `GET
+  /orgs/round-robin-solutions/memberships/rbansal42` → `{"role":"admin","state":"active"}`.
+  GitHub's package permission model grants organization owners implicit access to every
+  package the org owns, regardless of that package's own visibility setting — this is
+  the same reason the credential already worked for the other 7 apps' org-owned images
+  before this task started.
+- Both new repos' CI ran, and the image build+push step (`useblacksmith/build-push-action@v2`)
+  **succeeded** for both `rac3011-api` and `rac3011-web`, confirmed via
+  `gh run view --json jobs`. The overall CI run was marked `failure` only because of the
+  *next* step (see below) — not the image push.
+- A manual redeploy was done via SSH (`ssh oracle "curl ... http://127.0.0.1:3000/api/application.saveDockerProvider"`
+  then `.../application.redeploy`) against all three applicationIds. All three pulled
+  `ghcr.io/round-robin-solutions/rac3011-*:main` and started with **no auth/manifest
+  error** — `docker service ps` shows the old `ghcr.io/rbansal42/rac3011-web:main` task
+  shut down and replaced by the new org image, `Running`.
+- **No fine-grained PAT was created** (there is no API to mint one; it requires
+  interactive browser/`gh auth` device-flow, unavailable this session) and **no package
+  visibility was changed** — both were considered per the task brief and ruled
+  unnecessary once the redeploy test above succeeded. See `docs/decisions.md`.
+
+Each CI run's own `saveDockerProvider`+`redeploy` step still **fails** (`curl: (22) ...
+404 page not found`) because it targets `vars.DOKPLOY_BASE_URL=https://dokploy2.rbansal.xyz`,
+the same broken public dashboard hostname documented below (pre-existing, not introduced
+by this migration). This means CI merges will keep building+pushing images correctly but
+will not auto-redeploy until that routing gap is fixed; redeploys have to be triggered
+manually via SSH the same way this session did, exactly as was already true for the
+original (VPS-targeted) provisioning.
+
+#### Still blocked: rac3011-api / rac3011-worker crash-loop
+
+Unrelated to GHCR or the org/domain migration: once pulled and started, both containers
+exit immediately with Prisma `Error: P3005 The database schema is not empty` (needs
+`prisma migrate resolve --applied ...` or an equivalent baseline against the existing
+`rac3011` Postgres schema before `prisma migrate deploy` will proceed). This is an
+app/DB-state issue that predates this session's org/domain work and was not
+investigated or fixed here (out of this task's scope). `curl -I
+https://api.rotaract3011.org/health` will keep returning `502` until it's resolved.
+
+Redis service: `rac3011-redis`, `redisId` `g1tOU3T_AVtUmr1cPmUsV`, `appName`
+`rac3011-redis-2rddqj`, image `redis:7`, no published port (internal `dokploy-network`
+only). Deployed and confirmed running (`docker service ls` shows `1/1`).
+`REDIS_URL=redis://:<password>@rac3011-redis-2rddqj:6379` (password in secrets.md).
+
+No git-based source / SSH deploy key was set up for any of the three apps — all use
+`sourceType: docker`, matching the task's preference for image-based deploys on an
+instance with no GitHub App connected (same pattern as `photodump-server` on this same
+Oracle Dokploy).
+
+## Database connection — chosen approach
+
+`rac3011-postgres` (`postgres:18`, standalone container, not a Swarm service) predates
+this project and was already running on Oracle, published to the host at
+`127.0.0.1:5434` and `10.44.44.2:5434` (the WireGuard address used when the API/worker
+were expected to run on the VPS, reaching Oracle over the tunnel).
+
+Now that the apps run on the **same box** as the database, the WireGuard address is
+unnecessary indirection. Instead, `rac3011-postgres` was attached directly to
+`dokploy-network` (the attachable Swarm overlay network Dokploy uses for all
+apps/services on this instance — confirmed `attachable=true`, `scope=swarm`) via:
+
 ```
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILNFjhrf0NAlfl4Nfi8noqkC0HLDaslr1S4JnxCABilq dokploy-rac3011-web-deploy
+docker network connect dokploy-network rac3011-postgres
 ```
-Once the repo exists, add this as a **read-only deploy key** under repo Settings →
-Deploy keys (or `gh repo deploy-key add`), then `rac3011-web`'s git deploys will work
-without further Dokploy-side changes. The private key is stored inside Dokploy's own
-database only (not written to disk anywhere else on this machine after the initial
-provisioning run — the local temp copy was deleted).
+
+This is exactly the pattern every other app on this Dokploy instance uses for its own
+Redis (e.g. `rotaract-os-api` reaches `rotaract-os-redis-bmzjky:6379` the same way) — an
+internal Docker DNS name on the shared overlay network, no host-published port or tunnel
+involved. Verified: `docker run --rm --network dokploy-network postgres:18 pg_isready -h
+rac3011-postgres -p 5432 -U rac3011` → `accepting connections`.
+
+`DATABASE_URL=postgresql://rac3011:<password>@rac3011-postgres:5432/rac3011` (container's
+internal port `5432`, not the host-published `5434`).
+
+**Caveat**: `docker network connect` is a live, per-container operation, not persisted in
+any compose file (the container was started standalone, not via `docker compose up`). If
+`rac3011-postgres` is ever removed and recreated (image upgrade, etc.), it needs to be
+reconnected to `dokploy-network` by hand, or the run/compose definition needs to be
+updated to include that network. Not automated as part of this task.
+
+The apps' *other* Postgres-backed peers on this box (`rotaract-os-api`, `racddl-admin`,
+`healing-pouch-api`) actually reach a different, host-native (non-containerized) Postgres
+process at `172.18.0.1:5432` (the Docker bridge gateway address, since that Postgres
+binds `0.0.0.0:5432` on the host directly) — that pattern doesn't apply here since
+`rac3011-postgres` is its own dedicated container, not the shared host Postgres. The
+`dokploy-network` attach approach above is the correct analog for a dedicated-container
+database rather than the shared host one.
 
 ## DNS (Cloudflare zone `rotaract3011.org`, zone id `1fa583748a2c53c135ffb75c543225b0`)
 
-Pre-existing records **not touched**: apex `rotaract3011.org` and `www` (→ Vercel,
-proxied), wildcard `*.rotaract3011.org` (→ Vercel, proxied — exact-match records below
-correctly take precedence over this for their specific hostnames), `staging` and
-`testing` (→ VPS, pre-existing, untouched), CAA records, `_domainconnect` CNAME.
+`api.rotaract3011.org` (id `261a5be179429e8fbfdc1f8213fec3f4`) — created by the superseded
+VPS attempt — was **updated in place** to point at Oracle's public IP `92.4.95.94`
+instead of the VPS's `15.235.211.41`. Cloudflare-proxied.
 
-New records added:
+`testing.rotaract3011.org` (id `494729a16f748a0e1159263c5febc7e9`) is the **live app
+domain as of 2026-09-04's org/domain migration**, replacing `staging-v2.rotaract3011.org`.
+This record pre-existed (created 2026-09-03, pointing at the legacy VPS `15.235.211.41`
+where it served the *old* `rbansal42/RAC-Org-3011-website` legacy site) and was
+repointed in place to `92.4.95.94`. Cloudflare-proxied.
 
-| Type | Name | Content | Proxied | Record id |
-|---|---|---|---|---|
-| A | `api.rotaract3011.org` | `15.235.211.41` | yes | `261a5be179429e8fbfdc1f8213fec3f4` |
-| A | `staging-v2.rotaract3011.org` | `15.235.211.41` | yes | `ae98d8b64e3c4f8dd9d8cba6e06eb0a9` |
+The old `staging-v2.rotaract3011.org` A record (id `ae98d8b64e3c4f8dd9d8cba6e06eb0a9`) was
+**left as-is**, still resolving to `92.4.95.94` — Dokploy's domain record for `rac3011-web`
+was moved (not duplicated) to `testing.`, so this hostname no longer has a Traefik route
+and 404s/resets. Rahul said this was low priority either way; see `docs/decisions.md`.
 
-Auth used: Global API Key for `00082.rahul@gmail.com` (`X-Auth-Email` +
-`X-Auth-Key` headers) — this account apparently has access to the `rotaract3011.org`
-zone even though the zone's own Cloudflare account is "Techrid3011@gmail.com's Account";
-not investigated further, just noted as it was surprising.
+Auth used: Global API Key for `00082.rahul@gmail.com` (`X-Auth-Email` + `X-Auth-Key`
+headers), same as the original VPS-targeting task used.
 
-## nginx vhosts (VPS, host nginx — the front door, not Dokploy's Traefik)
+## TLS / routing — no nginx vhost needed
 
-Both copy the exact pattern of the pre-existing `staging.rotaract3011.org` vhost:
-Cloudflare origin cert at `/etc/ssl/cloudflare/rotaract3011.pem` + `.key`, proxy to
-Traefik on `127.0.0.1:18080`, `Host` header forwarded.
+The task's default assumption (mirror the `photodump.rbansal.xyz` nginx→Traefik-on-18080
+pattern) turned out to be **stale** and was not followed, after verifying live state:
 
-- `/etc/nginx/sites-available/api.rotaract3011.org` (symlinked into `sites-enabled/`)
-- `/etc/nginx/sites-available/staging-v2.rotaract3011.org` (symlinked into `sites-enabled/`)
+- `nginx.service` on Oracle is `inactive`/`disabled` (stopped today, before this session,
+  for reasons unrelated to this task — see the Dokploy dashboard gotcha above).
+- Nothing listens on `127.0.0.1:18080` any more.
+- `dokploy-traefik` binds host ports `80`/`443` directly (`0.0.0.0:80`, `0.0.0.0:443`).
+- Every live app domain on this Dokploy instance (`racddl.com`, `api-ros.rbansal.xyz`,
+  `thp-api.rbansal.xyz`, etc.) uses `certificateType: "letsencrypt"` with Traefik's own
+  ACME HTTP-01 challenge on port 80 (`certResolver: letsencrypt` in
+  `/etc/dokploy/traefik/traefik.yml`) — confirmed live: `racddl.com` presents a real
+  per-domain Let's Encrypt-issued cert (`CN=racddl.com`, issuer Google Trust Services
+  WE1), not a wildcard or Cloudflare origin cert.
 
-`nginx -t` passed (pre-existing warnings in unrelated vhosts, not introduced by this
-change) and `systemctl reload nginx` applied cleanly.
+So `api.rotaract3011.org` and (originally) `staging-v2.rotaract3011.org` were registered
+the same way, via `domain.create` on each application (`certificateType: letsencrypt`,
+`https: true`, correct internal port, no separate nginx vhost, no origin-cert file
+needed). This matches the *current* convention for every other app on this instance,
+superseding the older nginx+Cloudflare-origin-cert pattern the `photodump-server`
+secrets.md note (2026-09-02) still describes (that note is now stale for Oracle in
+general, not just for this project). The `rac3011-web` domain record was later changed
+in place to `testing.rotaract3011.org` via `domain.update` (same `certificateType:
+letsencrypt`), not re-created.
 
-Verified (2026-09-04, right after setup):
-- `curl -I https://api.rotaract3011.org/health` → `502` (Cloudflare → nginx → Traefik →
-  no running container, since the image doesn't exist yet — expected).
-- `curl -I https://staging-v2.rotaract3011.org/` → `502` for the same reason (transient
-  `525` seen once right after the DNS record was created, resolved itself within ~10s of
-  propagation).
-- Direct-to-origin (`--resolve ...:443:15.235.211.41`) also `502` on both, confirming
-  nginx→Traefik plumbing itself is healthy independent of Cloudflare.
+Verified 2026-09-04 (before the org/domain migration, images not pushed yet):
+- `curl -I https://api.rotaract3011.org/health` → `502` (Cloudflare → Traefik reached
+  fine, no backend container running yet since the image doesn't exist — expected).
+- `curl -I https://staging-v2.rotaract3011.org/` → `502` (same reason).
 
-CSP header (§11.4 of the spec) is meant to be applied by the web app's own nginx/serving
-layer inside its container (or by the Dockerfile), not by this host-level vhost — not
-set here; flag this to whoever builds the `rac3011-web` Dockerfile.
+Re-verified 2026-09-04 (after the org/domain migration, images pushed and pulled):
+- `curl -I https://testing.rotaract3011.org/` → `200`, real `rac3011-web` SPA HTML
+  served (edge TLS cert `CN=rotaract3011.org`, Google Trust Services — Cloudflare
+  Universal SSL, picked up within minutes of the DNS repoint).
+- `curl -I https://api.rotaract3011.org/health` → still `502` — not a GHCR/routing issue
+  this time, the container itself crash-loops on a Prisma migration-baseline error (see
+  "Still blocked" above).
+
+CSP header (§11.4 of the spec) still needs to be applied by the web app's own
+nginx/serving layer inside its container (the `rac3011-web` Dockerfile already runs
+`nginx:alpine` — the CSP header should be added to its `nginx.conf`, not at any
+host/Traefik layer, since there is no host nginx layer for this app any more).
 
 ## Environment variables set
 
-Full values in secrets.md / Obsidian. Summary of what's real vs. placeholder:
+Full values in secrets.md / Obsidian. Summary of what's real vs. placeholder — unchanged
+from the original VPS-targeting provisioning (all secrets were **reused**, not
+regenerated, per instruction):
 
 **Provisioned with real values** (rac3011-api and rac3011-worker, both apps):
-`NODE_ENV=production`, `PORT=3000`, `DATABASE_URL` (→ `10.44.44.2:5434/rac3011` over
-WireGuard), `REDIS_URL` (→ `rac3011-redis-agyau9:6379`), `AUTH_SECRET` (generated,
-64 hex chars / 32 bytes), `AUTH_URL=https://api.rotaract3011.org`,
-`COOKIE_DOMAIN=.rotaract3011.org`, `WEB_ORIGINS=https://staging-v2.rotaract3011.org`,
+`NODE_ENV=production`, `PORT=3000`, `DATABASE_URL` (→ `rac3011-postgres:5432/rac3011` on
+`dokploy-network`, see above — this is the one value that changed from the VPS attempt),
+`REDIS_URL` (→ `rac3011-redis-2rddqj:6379`, new password, redis re-created fresh on
+Oracle), `AUTH_SECRET`, `AUTH_URL=https://api.rotaract3011.org`,
+`COOKIE_DOMAIN=.rotaract3011.org`, `WEB_ORIGINS=https://testing.rotaract3011.org`
+(updated 2026-09-04 from `staging-v2.rotaract3011.org` via `application.saveEnvironment`
+on both `rac3011-api` and `rac3011-worker`, to match the domain migration — otherwise the
+API would reject the web app's CORS origin once it's actually running),
 `MAIL_DRIVER=console`, `MAIL_FROM`, `ORACLE_DAILY_CAP=100`, `VAPID_PUBLIC_KEY` /
-`VAPID_PRIVATE_KEY` (generated via `web-push generate-vapid-keys`),
-`VAPID_SUBJECT=mailto:rahul@hudle.in`, `DRISHTI_PII_KEY` (generated, 32-byte hex),
+`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT=mailto:rahul@hudle.in`, `DRISHTI_PII_KEY`,
 `STORAGE_DRIVER=live`, `UPLOADTHING_TOKEN_PERMANENT`, `UPLOADTHING_TOKEN_DYNAMIC`,
 `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
 `R2_BUCKET_PRIVATE=rac3011-private`, `R2_BUCKET_BACKUPS=rac3011-backups`,
 `LOG_LEVEL=info`, `SEED_DEV=false`. Worker additionally gets `WORKER=1`.
+`AUTH_SECRET`, `DRISHTI_PII_KEY`, and both `VAPID_*` keys are the **exact same values**
+the VPS attempt generated earlier today (reused from secrets.md, not regenerated).
 
-**rac3011-web build-time vars** (set as both `env` and `buildArgs` since Vite inlines at
-build time — see `nextjs-cache-gotchas`-style lesson from other projects, build-time
-values baked into the image can't be changed at runtime): `VITE_API_ORIGIN`,
-`VITE_VAPID_PUBLIC_KEY` (same value as the API's VAPID public key), `VITE_SENTRY_DSN`
-(CHANGEME).
+**rac3011-web** is image-based (not a Dokploy git/build source), so Vite's build-time
+`VITE_*` vars are **not** set as Dokploy application env — they're baked into the image at
+CI build time instead (GitHub Actions repo variables on
+`round-robin-solutions/rac3011-web`: `VITE_API_ORIGIN=https://api.rotaract3011.org`,
+`VITE_VAPID_PUBLIC_KEY` same value as above, `VITE_SENTRY_DSN` left unset/CHANGEME).
 
 **CHANGEME placeholders left** (unprovisioned, listed on both apps' env except where
 noted) and what unblocks each:
 - `MAIL_ALLOWLIST` — decide the allowlist policy, no blocker otherwise.
 - `ORACLE_SMTP_HOST` / `_PORT` (default 587 set) / `_USER` / `_PASSWORD` — blocked on
   provisioning Oracle Cloud Email Delivery (Email Domain + DKIM for `rotaract3011.org`,
-  approved sender, SMTP creds) per the "Oracle Email Delivery" secrets.md entry from
-  2026-09-04 — not done yet, tracked there.
+  approved sender, SMTP creds) per the "Oracle Email Delivery" secrets.md entry — Oracle
+  Cloud **Email Delivery** (the email product) is a separate thing from Oracle Cloud (the
+  infra host) and remains unprovisioned. Not done yet.
 - `RESEND_API_KEY`, `RESEND_DAILY_CAP` — need a Resend account/API key for this domain.
 - `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_DAILY_CAP` — need a Mailgun account.
 - `GMAIL_SMTP_USER`, `GMAIL_SMTP_APP_PASSWORD`, `GMAIL_DAILY_CAP` — need a Gmail
@@ -241,72 +342,55 @@ noted) and what unblocks each:
   app.
 - `SHADOW_DATABASE_URL` — intentionally not set; spec marks it CI-only.
 
-## Backups (Oracle box)
+## Backups (Oracle box) — unaffected
 
-Scripts: `/home/ubuntu/backups/scripts/rac3011-backup-15min.sh` and
-`rac3011-backup-daily.sh` (mirror the existing VPS `backup-databases.sh` pattern: same
-`onedrive:` rclone remote, same rotation approach). The `onedrive` remote didn't exist on
-Oracle before this — copied the remote definition (OAuth token is portable, not
-host-bound) from the VPS's `/home/ubuntu/.config/rclone/rclone.conf` into
-`/home/ubuntu/.config/rclone/rclone.conf` on Oracle. Only the `[onedrive]` section was
-copied, not `[hp-r2]` (unrelated to this task).
+Same scripts/cron as before this task (they always targeted Oracle, never the VPS, so
+the VPS-vs-Oracle decision doesn't change anything here):
+`/home/ubuntu/backups/scripts/rac3011-backup-15min.sh` and `rac3011-backup-daily.sh`,
+cron entries `*/15 * * * *` and `0 3 * * *` in the `ubuntu` crontab, uploading to
+`onedrive:Backup/RAC3011-15min/` (48h retention) and `onedrive:Backup/RAC3011-daily/`
+(30d retention).
 
-- 15-min job: `pg_dump -Fc rac3011` from the `rac3011-postgres` container (needs `sudo
-  docker exec`, cron runs as `ubuntu` which has passwordless sudo) → local
-  `/home/ubuntu/backups/rac3011-15min/` (kept 2h) → `onedrive:Backup/RAC3011-15min/`
-  (kept 48h, pruned by the script itself).
-- Daily job (03:00 UTC): same `pg_dump -Fc` plus a `pg_dumpall` (roles/full cluster) →
-  local `/home/ubuntu/backups/rac3011-daily/` (kept 3 days) → `onedrive:Backup/RAC3011-daily/`
-  (kept 30 days).
-- Cron (Oracle, `ubuntu` crontab, appended without touching the existing
-  replication-monitor/keka-bot lines):
-  ```
-  */15 * * * * /home/ubuntu/backups/scripts/rac3011-backup-15min.sh >> /home/ubuntu/backups/rac3011-backup.log 2>&1
-  0 3 * * * /home/ubuntu/backups/scripts/rac3011-backup-daily.sh >> /home/ubuntu/backups/rac3011-backup.log 2>&1
-  ```
-- Both scripts were run manually once during provisioning and verified: 15-min dump
-  44K, daily dump 44K + cluster dump 76K, all three confirmed present via `rclone ls`
-  on `onedrive:Backup/RAC3011-15min/` and `onedrive:Backup/RAC3011-daily/`.
+Re-verified this session: cron still installed, most recent 15-min dump at `16:00` UTC
+(2 minutes before the check), most recent daily dump + cluster dump at `15:33` UTC —
+all three confirmed present both locally and on the `onedrive` remote via `rclone lsl`.
 
-## GHCR access
+## GHCR access — original (superseded) provisioning note
 
-No registry credential is configured on the (fresh) Dokploy instance
-(`GET /api/registry.all` → `[]`). Pulling `ghcr.io/rbansal42/rac3011-api:main` currently
-fails with `denied` — this is expected regardless of credentials, since the
-`rbansal42/rac3011-api` GitHub repo doesn't exist yet (`gh repo view` → 404), so no image
-has ever been pushed.
+**Reused an existing registry credential** rather than creating a new one: this Oracle
+Dokploy instance already has a "GHCR rbansal42" credential (`registryId`
+`3xV9hoh-urh0mGgtP-FBf`, username `rbansal42`) used by `racddl-admin`, `rotaract-os-*`,
+`house-of-urve`, `bliss`, `itni-si-muskurahat`, `arteo`, `anasa`, and others already
+running on this instance. The same username/password were applied directly to all three
+`rac3011-*` applications via `application.saveDockerProvider`. Confirmed working:
+deployment logs show `Login Succeeded` immediately followed by `Error response from
+daemon: manifest unknown` — i.e. authentication is fine, the only failure is that no
+image had ever been pushed at that point.
 
-Could not mint a new PAT non-interactively: the local `gh` auth token for `rbansal42`
-has scopes `gist, read:org, repo, workflow` (no `read:packages`), and requesting
-additional scopes via `gh auth refresh --scopes read:packages` requires an interactive
-browser/device-code flow not available in this environment.
-
-**Manual step needed** (once the `rac3011-api` repo exists and CI is pushing images):
-1. On github.com, create a PAT (classic, or fine-grained with "Packages: read") with
-   `read:packages` scope for the account that owns/can read `ghcr.io/rbansal42/*`.
-2. Register it in Dokploy as a Docker registry credential
-   (`POST /api/registry.create` — router exists, schema needs `registryUrl:
-   ghcr.io`, `username`, `password` = the PAT), or attach it directly per-application
-   via `application.saveDockerProvider`'s `username`/`password` fields (already wired
-   up with empty strings on both `rac3011-api` and `rac3011-worker` — just needs the
-   real PAT filled in once the repo/image exist, or leave empty if the package is made
-   public, in which case no credential is needed at all).
-3. Save the PAT to `~/.claude/secrets.md` when created.
+**This entire section is now superseded by the "GitHub org + domain migration" section
+above** — both `rbansal42/rac3011-api` and `rbansal42/rac3011-web` moved into
+`round-robin-solutions` the same day, with CI rewritten to Blacksmith and images now
+successfully pushed and pulled under the new org-owned paths.
 
 ## Verification summary
 
 | Check | Result |
 |---|---|
-| SSH `vps` | OK |
 | SSH `oracle` | OK, passwordless sudo confirmed |
-| WireGuard `vps` ↔ `oracle` | Was down (config files renamed to `.bak` amid the disk-full incident), restored and enabled at boot on both sides |
-| `nc -vz 10.44.44.2 5434` from `vps` | OK, succeeds |
-| Dokploy API auth (local, `127.0.0.1:3400`) | OK, after the two gotchas above were worked around |
-| Dokploy API auth (public `dokploy.rbansal.xyz`) | Broken for API calls specifically (see gotcha) — use local/`--resolve` instead |
-| `rac3011` project + 3 apps + redis created | OK, ids above |
-| DNS `api.` / `staging-v2.` | OK, propagated, proxied through Cloudflare |
-| nginx vhosts + reload | OK |
-| `curl -I https://api.rotaract3011.org/health` | `502` (no image yet — expected) |
-| `curl -I https://staging-v2.rotaract3011.org/` | `502` (no repo yet — expected) |
-| GHCR pull | `denied` (no repo pushed yet, and no registry credential configured) |
-| Backup cron (Oracle) | OK, both scripts ran manually and confirmed uploaded; cron installed |
+| Oracle public IP | `92.4.95.94`, confirmed via `curl -4 ifconfig.me` on Oracle |
+| `rac3011` project + 3 apps + redis created (Oracle Dokploy) | OK, ids above |
+| `rac3011-redis` deploy | OK, `1/1` running |
+| `rac3011-postgres` reachable via `dokploy-network` | OK, `pg_isready` succeeds at `rac3011-postgres:5432` |
+| GitHub org moved `rbansal42` → `round-robin-solutions` (both repos) | OK, full history pushed, old repos untouched |
+| CI rewritten to Blacksmith ARM64-only, both repos | OK, both CI runs' build+push jobs succeeded (`gh run view --json jobs`) |
+| GHCR org image pull (all 3 apps) | OK — verified via manual SSH redeploy, `docker service ps` shows new `ghcr.io/round-robin-solutions/rac3011-*:main` images `Running`, no auth/manifest error. No new PAT or package-visibility change needed (org-admin implicit access) |
+| `rac3011-web` domain moved `staging-v2.` → `testing.rotaract3011.org` | OK, `domain.update` on existing `domainId`, `certificateType: letsencrypt` unchanged |
+| DNS `testing.rotaract3011.org` repointed to Oracle | OK, Cloudflare API confirms `92.4.95.94` |
+| DNS `api.rotaract3011.org` | unchanged, still `92.4.95.94` |
+| DNS `staging-v2.rotaract3011.org` | left as-is (Rahul: low priority), no longer routed by Dokploy |
+| `curl -I https://testing.rotaract3011.org/` | **`200`**, real `rac3011-web` SPA served |
+| `curl -I https://api.rotaract3011.org/health` | `502` — app/DB issue (Prisma `P3005`, migration baseline needed), not GHCR/routing |
+| `WEB_ORIGINS` env on rac3011-api/worker | updated to `https://testing.rotaract3011.org` to match the domain move |
+| Backup cron (Oracle) | OK, unaffected |
+| VPS orphan project | Left alone — VPS is being decommissioned separately, not touched this session |
+| Other 7 `round-robin-solutions` repos / other Oracle apps | Read-only inspection only, not modified |
