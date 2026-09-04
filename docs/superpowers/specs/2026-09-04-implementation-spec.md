@@ -355,6 +355,7 @@ RBAC is not a cross-cutting nicety here; it is the product's security boundary a
 5. **Super Admin is a role, not a code path**: only `RbacResolverService` knows about `super_admin`; services never check role keys, only permission keys plus scope.
 6. **Frontend never enforces**: `can()` hides controls; every hidden control's request would still be refused by the API. Playwright tests assert both (control hidden AND API 403/404 when called directly).
 7. **Every grant/revoke is audited** and visible at `/portal/admin/audit`.
+8. **When in doubt, restrict.** If this spec, the mockups, or the code leave it ambiguous whether a role may read or do something, choose the narrower option: require a permission rather than allow anonymous access, scope to the caller's club rather than the district, return public fields rather than full rows, and hide the control. Record the choice in `docs/decisions.md`. Widening access is a product decision for the district owner, never an implementer default.
 
 Denial matrix (each cell is an e2e test in `test/rbac/matrix.e2e.ts`, generated from this table):
 
