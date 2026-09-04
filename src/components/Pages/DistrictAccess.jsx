@@ -12,7 +12,10 @@ export default function DistrictAccess({
   userRole,
   onOpenLoginModal,
   onOpenUploadClubModal,
-  onOpenPostInitiativeModal
+  onOpenPostInitiativeModal,
+  onOpenClubProfile,
+  onOpenDRRProfile,
+  onOpenInitiativeDetail
 }) {
   const [selectedClubId, setSelectedClubId] = useState(null);
 
@@ -27,13 +30,14 @@ export default function DistrictAccess({
             onOpenLoginModal={onOpenLoginModal}
             onOpenUploadClubModal={onOpenUploadClubModal}
             onOpenPostInitiativeModal={onOpenPostInitiativeModal}
+            onViewClubProfile={onOpenClubProfile}
           />
         </div>
       ) : (
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
 
         {activeDistrictTab === 'heritage' && (
-          <PastDRRShowcase />
+          <PastDRRShowcase onSelectDRR={onOpenDRRProfile} />
         )}
 
         {activeDistrictTab === 'initiatives' && (
@@ -43,6 +47,8 @@ export default function DistrictAccess({
             userRole={userRole}
             onOpenLoginModal={onOpenLoginModal}
             onOpenPostInitiativeModal={onOpenPostInitiativeModal}
+            onSelectClub={onOpenClubProfile}
+            onSelectInitiative={onOpenInitiativeDetail}
           />
         )}
 

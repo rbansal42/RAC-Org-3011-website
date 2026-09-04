@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { PAST_DRRS } from '../../data/districtData';
 import { Award, Calendar, MapPin, Search, User, Sparkles, ArrowRight, Shield } from 'lucide-react';
 
-const DRRCard = React.memo(function DRRCard({ drr, eraConfig, isCurrentDRR, initials }) {
+const DRRCard = React.memo(function DRRCard({ drr, eraConfig, isCurrentDRR, initials, onSelect }) {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -10,10 +10,14 @@ const DRRCard = React.memo(function DRRCard({ drr, eraConfig, isCurrentDRR, init
       className={`rotaract-card ${isCurrentDRR ? 'current-drr-card' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onClick={() => onSelect && onSelect(drr)}
+      role="button"
+      tabIndex={0}
       style={{
         padding: '0px',
         borderRadius: '20px',
         overflow: 'hidden',
+        cursor: 'pointer',
         border: isCurrentDRR 
           ? '1.5px solid rgba(216, 27, 96, 0.45)'
           : (isHovered ? '2px solid var(--rotaract-pink)' : '1px solid rgba(255, 255, 255, 0.2)'),
@@ -301,7 +305,7 @@ const DRRCard = React.memo(function DRRCard({ drr, eraConfig, isCurrentDRR, init
   );
 });
 
-export default function PastDRRShowcase() {
+export default function PastDRRShowcase({ onSelectDRR } = {}) {
   const [selectedEra, setSelectedEra] = useState('all'); // 'all' | '3011' | '3010' | '301'
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -504,6 +508,7 @@ export default function PastDRRShowcase() {
                 eraConfig={eraConfig}
                 isCurrentDRR={isCurrentDRR}
                 initials={getInitials(drr.name)}
+                onSelect={onSelectDRR}
               />
             );
           })}
