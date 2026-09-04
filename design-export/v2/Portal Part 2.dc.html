@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap">
+<script src="./image-slot.js"></script>
+<style>
+body{margin:0;background:#EFE9EC}
+a{color:#D81B60;text-decoration:none}
+a:hover{color:#C21350}
+::selection{background:#FBE4EC}
+</style>
+</helmet>
+
+<div style="font-family:'Montserrat',sans-serif; padding:56px 40px 90px; display:flex; flex-direction:column; gap:64px; align-items:flex-start">
+
+<div style="max-width:900px">
+  <p style="display:inline-flex; background:#FDF0F5; border:1px solid rgba(216,27,96,0.2); color:#D81B60; padding:5px 14px; border-radius:6px; font-size:11.5px; font-weight:700; letter-spacing:1px; margin:0 0 16px">PORTAL · PART 2 OF 2</p>
+  <h1 style="font-size:36px; font-weight:800; letter-spacing:-0.6px; color:#1E1E24; margin:0 0 10px; line-height:1.15">Login, reporting, queries, announcements, admin, and two views that do not exist yet</h1>
+  <p style="font-size:13px; color:#71717A; margin:0">Continued from part 1.</p></div>
+
+<!-- ══════════ 12. COMPOSE ANNOUNCEMENT ══════════ -->
+<div>
+<div style="display:flex; align-items:baseline; gap:12px; margin-bottom:12px">
+  <span style="font-size:13px; font-weight:800; letter-spacing:1.5px; color:#D81B60">/portal/admin/announcements</span>
+  <span style="font-size:19px; font-weight:800; color:#1E1E24; letter-spacing:-0.3px">Send a broadcast</span>
+  <span style="font-size:13px; color:#71717A">Who it reaches is the first decision, not the last</span>
+</div>
+<div style="display:flex; gap:26px; align-items:flex-start">
+<div style="flex:0 0 1440px"><div data-screen-label="Compose announcement" style="width:1440px; background:#FFFFFF; border-radius:16px; overflow:hidden; box-shadow:0 20px 50px rgba(216,27,96,0.14)">
+  <div style="height:58px; padding:0 28px; display:flex; align-items:center; justify-content:space-between; background:#18181B">
+    <div style="display:flex; align-items:center; gap:26px">
+      <div style="display:flex; align-items:center; gap:12px">
+        <img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:24px; width:auto; display:block">
+        <span style="font-size:10.5px; font-weight:800; letter-spacing:1.3px; color:rgba(255,255,255,0.6); padding-left:12px; border-left:1px solid rgba(255,255,255,0.15)">SECRETARIAT</span>
+      </div>
+      <div style="display:flex; gap:20px; font-size:12.5px; font-weight:600; color:rgba(255,255,255,0.6)">
+        <span>Overview</span><span>Clubs &amp; reports</span><span>Showcase queue</span><span>Users</span><span style="color:#FFFFFF">Announcements</span>
+      </div>
+    </div>
+    <span style="font-size:11.5px; color:rgba(255,255,255,0.5)">Rtr. Archit Bhatia · Officer</span>
+  </div>
+  <div style="padding:30px 28px 36px; display:grid; grid-template-columns:1fr 340px; gap:34px">
+    <div style="max-width:660px">
+      <h2 style="font-size:26px; font-weight:800; letter-spacing:-0.5px; color:#1E1E24; margin:0 0 22px">New announcement</h2>
+
+      <p style="font-size:11px; font-weight:700; letter-spacing:1.2px; color:#D81B60; margin:0 0 12px">WHO SEES IT</p>
+      <div style="display:flex; flex-wrap:wrap; gap:9px; margin-bottom:14px">
+        <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:12.5px; font-weight:700; padding:9px 16px; border-radius:8px">All presidents &amp; secretaries · 146</div>
+        <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.2); color:#4A4A5A; font-size:12.5px; font-weight:600; padding:9px 16px; border-radius:8px">One zone</div>
+        <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.2); color:#4A4A5A; font-size:12.5px; font-weight:600; padding:9px 16px; border-radius:8px">Chosen clubs</div>
+        <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.2); color:#4A4A5A; font-size:12.5px; font-weight:600; padding:9px 16px; border-radius:8px">Officers only</div>
+      </div>
+      <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; display:flex; align-items:center; gap:10px; padding:12px 16px; background:#FDF8FA; border-radius:8px; margin-bottom:26px">
+        <span style="font-size:12px; color:#4A4A5A">Also send as email</span>
+        <div style="width:34px; height:19px; border-radius:10px; background:#D81B60; display:flex; align-items:center; padding:2px; box-sizing:border-box"><div style="width:15px; height:15px; border-radius:50%; background:#FFFFFF; margin-left:auto"></div></div>
+        <span style="font-size:11.5px; color:#71717A; margin-left:6px">Off by default — most announcements don't warrant 146 emails</span>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:18px; margin-bottom:26px">
+        <div>
+          <p style="font-size:12px; font-weight:700; color:#4A4A5A; margin:0 0 7px">Headline</p>
+          <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:1.5px solid #D81B60; border-radius:8px; padding:13px 14px; font-size:15px; font-weight:700; color:#1E1E24; background:#FFFFFF">CLS attendance is compulsory for presidents and secretaries</div>
+        </div>
+        <div>
+          <p style="font-size:12px; font-weight:700; color:#4A4A5A; margin:0 0 7px">Body</p>
+          <div style="border:1px solid rgba(216,27,96,0.15); border-radius:8px; padding:13px 14px; font-size:13.5px; line-height:1.65; color:#1E1E24; background:#FDF8FA">The Club Leadership Seminar is on Sunday 6 September at India Habitat Centre, 9:30 am to 5:00 pm. Both office-bearers are expected. If neither can attend, reply here with a reason before Friday — it is recorded against the club's compliance for the year.</div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px">
+          <div>
+            <p style="font-size:12px; font-weight:700; color:#4A4A5A; margin:0 0 7px">Does it need a reply?</p>
+            <div style="display:flex; border:1px solid rgba(216,27,96,0.15); border-radius:8px; overflow:hidden">
+              <div style="flex:1; background:#D81B60; color:#FFFFFF; font-size:12.5px; font-weight:700; padding:11px 0; text-align:center">Yes</div>
+              <div style="flex:1; color:#4A4A5A; font-size:12.5px; font-weight:600; padding:11px 0; text-align:center">No</div>
+            </div>
+          </div>
+          <div>
+            <p style="font-size:12px; font-weight:700; color:#4A4A5A; margin:0 0 7px">Reply by</p>
+            <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.15); border-radius:8px; padding:11px 13px; font-size:13px; color:#1E1E24; background:#FDF8FA; font-weight:600">Friday 5 September</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:16px; padding-top:24px; border-top:1px solid #F3E5EB">
+        <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:14.5px; font-weight:700; padding:14px 30px; border-radius:8px; box-shadow:0 6px 20px rgba(216,27,96,0.25)">Send to 146 people</div>
+        <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:2px solid #D81B60; color:#D81B60; font-size:14.5px; font-weight:700; padding:12px 24px; border-radius:8px">Save as draft</div>
+      </div>
+    </div>
+
+    <div>
+      <div style="border:1px solid rgba(216,27,96,0.12); border-radius:16px; padding:20px 22px; margin-bottom:16px">
+        <p style="font-size:10.5px; font-weight:700; letter-spacing:0.9px; color:#D81B60; margin:0 0 14px">HOW IT WILL LOOK</p>
+        <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:10px; padding:15px 16px">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:9px">
+            <span style="background:#D81B60; color:#FFFFFF; font-size:8.5px; font-weight:700; letter-spacing:0.6px; padding:3px 7px; border-radius:4px">UNREAD</span>
+            <span style="font-size:9.5px; font-weight:700; color:#880E4F; letter-spacing:0.3px">ACTION NEEDED BY 5 SEPTEMBER</span>
+          </div>
+          <p style="font-size:13px; font-weight:800; color:#1E1E24; margin:0 0 7px; line-height:1.35">CLS attendance is compulsory for presidents and secretaries</p>
+          <p style="font-size:11px; line-height:1.55; color:#4A4A5A; margin:0">The Club Leadership Seminar is on Sunday 6 September at India Habitat Centre…</p>
+        </div>
+      </div>
+      <div style="border:1px solid rgba(216,27,96,0.12); border-radius:16px; padding:20px 22px; margin-bottom:16px">
+        <p style="font-size:10.5px; font-weight:700; letter-spacing:0.9px; color:#D81B60; margin:0 0 14px">SENT RECENTLY</p>
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <div style="padding-bottom:12px; border-bottom:1px solid #F3E5EB"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 4px; line-height:1.35">Mahadan 9.0 — submit your camp venue</p><p style="font-size:11px; color:#71717A; margin:0">28 Aug · 146 recipients · 84 opened</p></div>
+          <div><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 4px; line-height:1.35">Monthly reports are now open in the portal</p><p style="font-size:11px; color:#71717A; margin:0">20 Aug · 146 recipients · 121 opened</p></div>
+        </div>
+      </div>
+      <div style="background:#FDF8FA; border:1px solid #F3E5EB; border-radius:16px; padding:20px 22px">
+        <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0">Open counts are shown because they are the only honest measure of whether a broadcast worked. 84 of 146 on a camp deadline is the number that tells the secretariat to phone the ZRRs rather than send a second announcement.</p>
+      </div>
+    </div>
+  </div>
+</div></div>
+<div style="width:768px; flex:0 0 768px"><div style="display:flex; align-items:baseline; gap:9px; margin-bottom:9px"><span style="font-size:11px; font-weight:800; letter-spacing:1.2px; color:#D81B60">TABLET · 768</span><span style="font-size:11.5px; color:#71717A">Preview and sent-history panels move below the form</span></div><div style="width:768px; background:#FFFFFF; border-radius:14px; overflow:hidden; box-shadow:0 14px 36px rgba(216,27,96,0.13)"><div style="height:54px; padding:0 20px; display:flex; align-items:center; justify-content:space-between; background:#18181B">
+      <div style="display:flex; align-items:center; gap:18px">
+        <div style="display:flex; align-items:center; gap:10px"><img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:21px; width:auto; display:block"><span style="font-size:9.5px; font-weight:800; letter-spacing:1.1px; color:rgba(255,255,255,0.6); padding-left:10px; border-left:1px solid rgba(255,255,255,0.15)">SECRETARIAT</span></div>
+        <div style="display:flex; gap:14px; font-size:11.5px; font-weight:600; color:rgba(255,255,255,0.6)"><span>Overview</span><span>Clubs</span><span>Showcase</span><span>Users</span><span style="color:#FFFFFF">News</span></div>
+      </div>
+      <div style="width:22px; height:22px; border-radius:50%; background:#4A4A5A"></div>
+    </div><div style="padding:22px 20px 0">
+    <h2 style="font-size:22px; font-weight:800; letter-spacing:-0.4px; color:#1E1E24; margin:0 0 18px">New announcement</h2>
+    <p style="font-size:10px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0 0 11px">WHO SEES IT</p>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px">
+      <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:12px; font-weight:700; padding:9px 14px; border-radius:8px">All presidents &amp; secretaries · 146</div>
+      <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.2); color:#4A4A5A; font-size:12px; font-weight:600; padding:9px 14px; border-radius:8px">One zone</div>
+      <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.2); color:#4A4A5A; font-size:12px; font-weight:600; padding:9px 14px; border-radius:8px">Chosen clubs</div>
+      <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.2); color:#4A4A5A; font-size:12px; font-weight:600; padding:9px 14px; border-radius:8px">Officers only</div>
+    </div>
+    <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; display:flex; align-items:center; gap:10px; padding:11px 14px; background:#FDF8FA; border-radius:8px; margin-bottom:20px">
+      <span style="font-size:11.5px; color:#4A4A5A">Also send as email</span>
+      <div style="width:32px; height:18px; border-radius:9px; background:#D81B60; display:flex; align-items:center; padding:2px; box-sizing:border-box"><div style="width:14px; height:14px; border-radius:50%; background:#FFFFFF; margin-left:auto"></div></div>
+      <span style="font-size:11px; color:#71717A; margin-left:auto">Off by default</span>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:15px; padding-bottom:20px">
+      <div><p style="font-size:11.5px; font-weight:700; color:#4A4A5A; margin:0 0 6px">Headline</p><div style="border:1.5px solid #D81B60; border-radius:8px; padding:12px 13px; font-size:14px; font-weight:700; color:#1E1E24; line-height:1.35">CLS attendance is compulsory for presidents and secretaries</div></div>
+      <div><p style="font-size:11.5px; font-weight:700; color:#4A4A5A; margin:0 0 6px">Body</p><div style="border:1px solid rgba(216,27,96,0.15); border-radius:8px; padding:12px 13px; font-size:12.5px; line-height:1.6; color:#1E1E24; background:#FDF8FA">Sunday 6 September at India Habitat Centre, 9:30 am to 5:00 pm. Both office-bearers are expected. If neither can attend, reply here with a reason before Friday.</div></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
+        <div><p style="font-size:11.5px; font-weight:700; color:#4A4A5A; margin:0 0 6px">Does it need a reply?</p><div style="display:flex; border:1px solid rgba(216,27,96,0.15); border-radius:8px; overflow:hidden"><div style="flex:1; background:#D81B60; color:#FFFFFF; font-size:12px; font-weight:700; padding:12px 0; text-align:center">Yes</div><div style="flex:1; color:#4A4A5A; font-size:12px; font-weight:600; padding:12px 0; text-align:center">No</div></div></div>
+        <div><p style="font-size:11.5px; font-weight:700; color:#4A4A5A; margin:0 0 6px">Reply by</p><div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.15); border-radius:8px; padding:12px 13px; font-size:12.5px; color:#1E1E24; background:#FDF8FA; font-weight:600">Friday 5 September</div></div>
+      </div>
+    </div>
+  </div>
+  <div style="position:sticky; bottom:0; padding:13px 16px; background:#FFFFFF; border-top:1px solid #F3E5EB; display:flex; gap:10px"><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; flex:1; background:#D81B60; color:#FFFFFF; font-size:13.5px; font-weight:700; padding:13px 0; border-radius:8px; text-align:center">Send to 146 people</div><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:2px solid #D81B60; color:#D81B60; font-size:13.5px; font-weight:700; padding:11px 16px; border-radius:8px">Draft</div></div></div></div><div style="width:390px; flex:0 0 390px"><div style="display:flex; align-items:baseline; gap:9px; margin-bottom:9px"><span style="font-size:11px; font-weight:800; letter-spacing:1.2px; color:#D81B60">MOBILE · 390</span><span style="font-size:11.5px; color:#71717A">Audience first, then the words — send stays pinned</span></div><div style="width:390px; background:#FFFFFF; border-radius:14px; overflow:hidden; box-shadow:0 14px 36px rgba(216,27,96,0.13)"><div style="height:52px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; background:#18181B">
+      <img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:20px; width:auto; display:block">
+      <div style="display:flex; align-items:center; gap:12px"><span style="font-size:10.5px; color:rgba(255,255,255,0.5)">Officer</span><div style="display:flex; flex-direction:column; gap:3px"><div style="width:16px; height:1.5px; background:#FFFFFF"></div><div style="width:16px; height:1.5px; background:#FFFFFF"></div><div style="width:16px; height:1.5px; background:#FFFFFF"></div></div></div>
+    </div><div style="padding:18px 16px 0">
+    <h2 style="font-size:20px; font-weight:800; letter-spacing:-0.4px; color:#1E1E24; margin:0 0 18px">New announcement</h2>
+    <p style="font-size:10px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0 0 11px">WHO SEES IT</p>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px">
+      <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:12px; font-weight:700; padding:9px 14px; border-radius:8px">All presidents &amp; secretaries · 146</div>
+      <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.2); color:#4A4A5A; font-size:12px; font-weight:600; padding:9px 14px; border-radius:8px">One zone</div>
+      <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.2); color:#4A4A5A; font-size:12px; font-weight:600; padding:9px 14px; border-radius:8px">Chosen clubs</div>
+      
+    </div>
+    <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; display:flex; align-items:center; gap:10px; padding:11px 14px; background:#FDF8FA; border-radius:8px; margin-bottom:20px">
+      <span style="font-size:11.5px; color:#4A4A5A">Also send as email</span>
+      <div style="width:32px; height:18px; border-radius:9px; background:#D81B60; display:flex; align-items:center; padding:2px; box-sizing:border-box"><div style="width:14px; height:14px; border-radius:50%; background:#FFFFFF; margin-left:auto"></div></div>
+      <span style="font-size:11px; color:#71717A; margin-left:auto">Off by default</span>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:15px; padding-bottom:20px">
+      <div><p style="font-size:11.5px; font-weight:700; color:#4A4A5A; margin:0 0 6px">Headline</p><div style="border:1.5px solid #D81B60; border-radius:8px; padding:12px 13px; font-size:14px; font-weight:700; color:#1E1E24; line-height:1.35">CLS attendance is compulsory for presidents and secretaries</div></div>
+      <div><p style="font-size:11.5px; font-weight:700; color:#4A4A5A; margin:0 0 6px">Body</p><div style="border:1px solid rgba(216,27,96,0.15); border-radius:8px; padding:12px 13px; font-size:12.5px; line-height:1.6; color:#1E1E24; background:#FDF8FA">Sunday 6 September at India Habitat Centre, 9:30 am to 5:00 pm. Both office-bearers are expected. If neither can attend, reply here with a reason before Friday.</div></div>
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div><p style="font-size:11.5px; font-weight:700; color:#4A4A5A; margin:0 0 6px">Does it need a reply?</p><div style="display:flex; border:1px solid rgba(216,27,96,0.15); border-radius:8px; overflow:hidden"><div style="flex:1; background:#D81B60; color:#FFFFFF; font-size:12px; font-weight:700; padding:12px 0; text-align:center">Yes</div><div style="flex:1; color:#4A4A5A; font-size:12px; font-weight:600; padding:12px 0; text-align:center">No</div></div></div>
+        <div><p style="font-size:11.5px; font-weight:700; color:#4A4A5A; margin:0 0 6px">Reply by</p><div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; border:1px solid rgba(216,27,96,0.15); border-radius:8px; padding:12px 13px; font-size:12.5px; color:#1E1E24; background:#FDF8FA; font-weight:600">Friday 5 September</div></div>
+      </div>
+    </div>
+  </div>
+  <div style="position:sticky; bottom:0; padding:13px 16px; background:#FFFFFF; border-top:1px solid #F3E5EB; display:flex; gap:10px"><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; flex:1; background:#D81B60; color:#FFFFFF; font-size:13.5px; font-weight:700; padding:13px 0; border-radius:8px; text-align:center">Send to 146 people</div><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:2px solid #D81B60; color:#D81B60; font-size:13.5px; font-weight:700; padding:11px 16px; border-radius:8px">Draft</div></div></div></div>
+</div>
+</div>
+<!-- ══════════ 13. PORTAL RESOURCES ══════════ -->
+<div>
+<div style="display:flex; align-items:baseline; gap:12px; margin-bottom:12px">
+  <span style="font-size:13px; font-weight:800; letter-spacing:1.5px; color:#D81B60">/portal/resources</span>
+  <span style="font-size:19px; font-weight:800; color:#1E1E24; letter-spacing:-0.3px">Resources, signed in</span>
+  <span style="font-size:13px; color:#71717A">The same hub as the public page, plus the rows that were locked</span>
+</div>
+<div style="display:flex; gap:26px; align-items:flex-start">
+<div style="flex:0 0 1440px"><div data-screen-label="Portal resources" style="width:1440px; background:#FFFFFF; border-radius:16px; overflow:hidden; box-shadow:0 20px 50px rgba(216,27,96,0.14)">
+  <div style="height:58px; padding:0 28px; display:flex; align-items:center; justify-content:space-between; background:#18181B">
+    <div style="display:flex; align-items:center; gap:26px">
+      <img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:24px; width:auto; display:block">
+      <div style="display:flex; gap:20px; font-size:12.5px; font-weight:600; color:rgba(255,255,255,0.6)">
+        <span>Dashboard</span><span>My reports</span><span>Announcements</span><span style="color:#FFFFFF">Resources</span>
+      </div>
+    </div>
+    <span style="font-size:11.5px; color:rgba(255,255,255,0.5)">Delhi South East · President</span>
+  </div>
+  <div style="padding:30px 28px 36px">
+    <h2 style="font-size:26px; font-weight:800; letter-spacing:-0.5px; color:#1E1E24; margin:0 0 8px">Resources</h2>
+    <p style="font-size:14px; color:#4A4A5A; margin:0 0 26px; max-width:620px">Everything on the public resource hub, plus the two databases that are locked there.</p>
+
+    <div style="display:flex; align-items:center; gap:14px; margin-bottom:16px">
+      <p style="font-size:11px; font-weight:700; letter-spacing:1.2px; color:#D81B60; margin:0">NOW UNLOCKED FOR YOU</p>
+      <div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:30px">
+      <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:14px; padding:22px 24px">
+        <p style="font-size:16px; font-weight:800; color:#1E1E24; margin:0 0 7px">President database</p>
+        <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0 0 16px">Every club's president and secretary for RY 2026–27, with phone, email and blood group. 146 rows.</p>
+        <div style="display:flex; gap:9px">
+          <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:12.5px; font-weight:700; padding:10px 18px; border-radius:7px">Open</div>
+          <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:1.5px solid #D81B60; color:#D81B60; font-size:12.5px; font-weight:700; padding:9px 16px; border-radius:7px">Download CSV</div>
+        </div>
+      </div>
+      <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:14px; padding:22px 24px">
+        <p style="font-size:16px; font-weight:800; color:#1E1E24; margin:0 0 7px">DSC database</p>
+        <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0 0 16px">District Service Council roster with portfolios and contacts — who to ask about what.</p>
+        <div style="display:flex; gap:9px">
+          <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:12.5px; font-weight:700; padding:10px 18px; border-radius:7px">Open</div>
+          <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:1.5px solid #D81B60; color:#D81B60; font-size:12.5px; font-weight:700; padding:9px 16px; border-radius:7px">Download CSV</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:14px; margin-bottom:16px">
+      <p style="font-size:11px; font-weight:700; letter-spacing:1.2px; color:#D81B60; margin:0">FOR YOUR CLUB'S REPORTING</p>
+      <div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div>
+    </div>
+    <table style="width:100%; border-collapse:collapse; border-top:2px solid #D81B60">
+      <thead><tr>
+        <th style="text-align:left; padding:9px 12px 9px 0; font-size:10px; font-weight:700; letter-spacing:0.9px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB">Document</th>
+        <th style="text-align:left; width:230px; padding:9px 12px 9px 0; font-size:10px; font-weight:700; letter-spacing:0.9px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB">Why you'd open it</th>
+        <th style="text-align:left; width:110px; padding:9px 12px 9px 0; font-size:10px; font-weight:700; letter-spacing:0.9px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB">Updated</th>
+        <th style="text-align:left; width:90px; padding:9px 0; font-size:10px; font-weight:700; letter-spacing:0.9px; text-transform:uppercase; color:#D81B60; border-bottom:1px solid #F3E5EB"></th>
+      </tr></thead>
+      <tbody>
+        <tr><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:13.5px; font-weight:700; color:#1E1E24">Point-system methodology</td><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:12.5px; color:#4A4A5A">To understand your month's score</td><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:12.5px; color:#4A4A5A">Aug 2026</td><td style="padding:13px 0; border-bottom:1px solid #F3E5EB"><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></td></tr>
+        <tr><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:13.5px; font-weight:700; color:#1E1E24">Project reporting checklist</td><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:12.5px; color:#4A4A5A">To note the right things on the day</td><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:12.5px; color:#4A4A5A">Aug 2026</td><td style="padding:13px 0; border-bottom:1px solid #F3E5EB"><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></td></tr>
+        <tr><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:13.5px; font-weight:700; color:#1E1E24">ISD guidelines</td><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:12.5px; color:#4A4A5A">Before planning an international project</td><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:12.5px; color:#4A4A5A">Jul 2026</td><td style="padding:13px 0; border-bottom:1px solid #F3E5EB"><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></td></tr>
+        <tr><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:13.5px; font-weight:700; color:#1E1E24">Sister-club agreement template</td><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:12.5px; color:#4A4A5A">To twin with a club abroad</td><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:12.5px; color:#4A4A5A">Jul 2026</td><td style="padding:13px 0; border-bottom:1px solid #F3E5EB"><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">DOCX ↓</span></td></tr>
+        <tr><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:13.5px; font-weight:700; color:#1E1E24">Club installation run sheet</td><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:12.5px; color:#4A4A5A">Two weeks before your installation</td><td style="padding:13px 12px 13px 0; border-bottom:1px solid #F3E5EB; font-size:12.5px; color:#4A4A5A">Aug 2026</td><td style="padding:13px 0; border-bottom:1px solid #F3E5EB"><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></td></tr>
+      </tbody>
+    </table>
+    <p style="margin:20px 0 0; font-size:12.5px; line-height:1.6; color:#4A4A5A; max-width:800px">The "why you'd open it" column replaces the public page's description column, because a signed-in president is not browsing — they have a job in front of them and want to know which document is for it. Same documents, different question answered.</p>
+  </div>
+</div></div>
+<div style="width:768px; flex:0 0 768px"><div style="display:flex; align-items:baseline; gap:9px; margin-bottom:9px"><span style="font-size:11px; font-weight:800; letter-spacing:1.2px; color:#D81B60">TABLET · 768</span><span style="font-size:11.5px; color:#71717A">Databases stay paired; the updated column drops</span></div><div style="width:768px; background:#FFFFFF; border-radius:14px; overflow:hidden; box-shadow:0 14px 36px rgba(216,27,96,0.13)"><div style="height:54px; padding:0 20px; display:flex; align-items:center; justify-content:space-between; background:#18181B">
+      <div style="display:flex; align-items:center; gap:18px">
+        <div style="display:flex; align-items:center; gap:10px"><img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:21px; width:auto; display:block"></div>
+        <div style="display:flex; gap:14px; font-size:11.5px; font-weight:600; color:rgba(255,255,255,0.6)"><span>Dashboard</span><span>Reports</span><span>News</span><span style="color:#FFFFFF">Docs</span></div>
+      </div>
+      <div style="width:22px; height:22px; border-radius:50%; background:#4A4A5A"></div>
+    </div><div style="padding:22px 20px 26px">
+    <h2 style="font-size:22px; font-weight:800; letter-spacing:-0.4px; color:#1E1E24; margin:0 0 6px">Resources</h2>
+    <p style="font-size:12.5px; color:#4A4A5A; margin:0 0 20px">Everything on the public hub, plus the two locked databases.</p>
+    <p style="font-size:10px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0 0 12px">NOW UNLOCKED FOR YOU</p>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:24px">
+      <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:12px; padding:18px 19px"><p style="font-size:14.5px; font-weight:800; color:#1E1E24; margin:0 0 6px">President database</p><p style="font-size:12px; line-height:1.55; color:#4A4A5A; margin:0 0 13px">Every club president and secretary for RY 2026–27, with phone, email and blood group. 146 rows.</p><div style="display:flex; gap:8px"><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:12px; font-weight:700; padding:10px 16px; border-radius:7px">Open</div><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:1.5px solid #D81B60; color:#D81B60; font-size:12px; font-weight:700; padding:9px 14px; border-radius:7px">CSV</div></div></div><div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:12px; padding:18px 19px"><p style="font-size:14.5px; font-weight:800; color:#1E1E24; margin:0 0 6px">DSC database</p><p style="font-size:12px; line-height:1.55; color:#4A4A5A; margin:0 0 13px">District Service Council roster with portfolios and contacts.</p><div style="display:flex; gap:8px"><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:12px; font-weight:700; padding:10px 16px; border-radius:7px">Open</div><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:1.5px solid #D81B60; color:#D81B60; font-size:12px; font-weight:700; padding:9px 14px; border-radius:7px">CSV</div></div></div>
+    </div>
+    <p style="font-size:10px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0 0 12px">FOR YOUR CLUB'S REPORTING</p>
+    <div style="border-top:2px solid #D81B60">
+      <div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #F3E5EB"><div style="flex:1"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Point-system methodology</p><p style="font-size:11px; color:#71717A; margin:0">To understand your month's score</p></div><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></div><div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #F3E5EB"><div style="flex:1"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Project reporting checklist</p><p style="font-size:11px; color:#71717A; margin:0">To note the right things on the day</p></div><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></div><div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #F3E5EB"><div style="flex:1"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">ISD guidelines</p><p style="font-size:11px; color:#71717A; margin:0">Before planning an international project</p></div><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></div><div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #F3E5EB"><div style="flex:1"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Sister-club agreement template</p><p style="font-size:11px; color:#71717A; margin:0">To twin with a club abroad</p></div><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">DOCX ↓</span></div><div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #F3E5EB"><div style="flex:1"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Club installation run sheet</p><p style="font-size:11px; color:#71717A; margin:0">Two weeks before your installation</p></div><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></div>
+    </div>
+  </div></div></div><div style="width:390px; flex:0 0 390px"><div style="display:flex; align-items:baseline; gap:9px; margin-bottom:9px"><span style="font-size:11px; font-weight:800; letter-spacing:1.2px; color:#D81B60">MOBILE · 390</span><span style="font-size:11.5px; color:#71717A">Document rows keep the reason, drop the date — a phone list is for finding, not auditing</span></div><div style="width:390px; background:#FFFFFF; border-radius:14px; overflow:hidden; box-shadow:0 14px 36px rgba(216,27,96,0.13)"><div style="height:52px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; background:#18181B">
+      <img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:20px; width:auto; display:block">
+      <div style="display:flex; align-items:center; gap:12px"><span style="font-size:10.5px; color:rgba(255,255,255,0.5)">President</span><div style="display:flex; flex-direction:column; gap:3px"><div style="width:16px; height:1.5px; background:#FFFFFF"></div><div style="width:16px; height:1.5px; background:#FFFFFF"></div><div style="width:16px; height:1.5px; background:#FFFFFF"></div></div></div>
+    </div><div style="padding:18px 16px 22px">
+    <h2 style="font-size:20px; font-weight:800; letter-spacing:-0.4px; color:#1E1E24; margin:0 0 6px">Resources</h2>
+    <p style="font-size:12.5px; color:#4A4A5A; margin:0 0 20px">Everything on the public hub, plus the two locked databases.</p>
+    <p style="font-size:10px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0 0 12px">NOW UNLOCKED FOR YOU</p>
+    <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:24px">
+      <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:12px; padding:18px 19px"><p style="font-size:14.5px; font-weight:800; color:#1E1E24; margin:0 0 6px">President database</p><p style="font-size:12px; line-height:1.55; color:#4A4A5A; margin:0 0 13px">Every club president and secretary for RY 2026–27, with phone, email and blood group. 146 rows.</p><div style="display:flex; gap:8px"><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:12px; font-weight:700; padding:10px 16px; border-radius:7px">Open</div><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:1.5px solid #D81B60; color:#D81B60; font-size:12px; font-weight:700; padding:9px 14px; border-radius:7px">CSV</div></div></div><div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:12px; padding:18px 19px"><p style="font-size:14.5px; font-weight:800; color:#1E1E24; margin:0 0 6px">DSC database</p><p style="font-size:12px; line-height:1.55; color:#4A4A5A; margin:0 0 13px">District Service Council roster with portfolios and contacts.</p><div style="display:flex; gap:8px"><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:12px; font-weight:700; padding:10px 16px; border-radius:7px">Open</div><div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:1.5px solid #D81B60; color:#D81B60; font-size:12px; font-weight:700; padding:9px 14px; border-radius:7px">CSV</div></div></div>
+    </div>
+    <p style="font-size:10px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0 0 12px">FOR YOUR CLUB'S REPORTING</p>
+    <div style="border-top:2px solid #D81B60">
+      <div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #F3E5EB"><div style="flex:1"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Point-system methodology</p><p style="font-size:11px; color:#71717A; margin:0">To understand your month's score</p></div><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></div><div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #F3E5EB"><div style="flex:1"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Project reporting checklist</p><p style="font-size:11px; color:#71717A; margin:0">To note the right things on the day</p></div><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></div><div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #F3E5EB"><div style="flex:1"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">ISD guidelines</p><p style="font-size:11px; color:#71717A; margin:0">Before planning an international project</p></div><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></div><div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #F3E5EB"><div style="flex:1"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Sister-club agreement template</p><p style="font-size:11px; color:#71717A; margin:0">To twin with a club abroad</p></div><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">DOCX ↓</span></div><div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #F3E5EB"><div style="flex:1"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Club installation run sheet</p><p style="font-size:11px; color:#71717A; margin:0">Two weeks before your installation</p></div><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">PDF ↓</span></div>
+    </div>
+  </div></div></div>
+</div>
+</div>
+
+<!-- ══════════ 14. DAC MEMBER ══════════ -->
+<div>
+<div style="display:flex; align-items:baseline; gap:12px; margin-bottom:12px">
+  <span style="font-size:13px; font-weight:800; letter-spacing:1.5px; color:#D81B60">/portal/dashboard</span>
+  <span style="font-size:19px; font-weight:800; color:#1E1E24; letter-spacing:-0.3px">DAC member</span>
+  <span style="font-size:13px; color:#71717A">A view that does not exist yet — DAC accounts are refused at login today</span>
+</div>
+<div style="display:flex; gap:26px; align-items:flex-start">
+<div style="flex:0 0 1440px"><div data-screen-label="DAC member" style="width:1440px; box-sizing:border-box; background:#FFFFFF; border-radius:16px; overflow:hidden; box-shadow:0 20px 50px rgba(216,27,96,0.14)"><div style="height:58px; padding:0 28px; display:flex; align-items:center; justify-content:space-between; background:#18181B">
+    <div style="display:flex; align-items:center; gap:26px">
+      <div style="display:flex; align-items:center; gap:11px"><img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:24px; width:auto; display:block"><span style="font-size:9.5px; font-weight:800; letter-spacing:1.2px; color:rgba(255,255,255,0.6); padding-left:11px; border-left:1px solid rgba(255,255,255,0.15)">DAC</span></div>
+      <div style="display:flex; gap:20px; font-size:12.5px; font-weight:600; color:rgba(255,255,255,0.6)"><span style="color:#FFFFFF">Overview</span><span>Announcements</span><span>Calendar</span><span>Resources</span></div>
+    </div>
+    <span style="font-size:11.5px; color:rgba(255,255,255,0.5)">PDRR Rtr. Kartik Kumar · DAC member</span>
+  </div>
+  <div style="padding:30px 28px 36px">
+    <div style="display:grid; grid-template-columns:1fr 340px; gap:26px">
+      <div>
+        <p style="font-size:10.5px; font-weight:700; letter-spacing:1px; color:#D81B60; margin:0 0 8px">DISTRICT ADVISORY COMMITTEE</p>
+        <h2 style="font-size:27px; font-weight:800; letter-spacing:-0.5px; color:#1E1E24; margin:0 0 7px; line-height:1.2">Where the district stands, as of 4 September</h2>
+        <p style="font-size:13.5px; line-height:1.6; color:#4A4A5A; margin:0 0 22px; max-width:600px">Read-only. You are here to advise, so this view carries the numbers and the papers, and none of the buttons that change them.</p>
+
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px">
+          <div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:16px 18px"><p style="font-size:25px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">75</p><p style="font-size:11.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Clubs in the district</p></div><div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:16px 18px"><p style="font-size:25px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">48</p><p style="font-size:11.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Filed for August</p></div><div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:16px 18px"><p style="font-size:25px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">9</p><p style="font-size:11.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Chartered this year</p></div><div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:16px 18px"><p style="font-size:25px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">1,847</p><p style="font-size:11.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Blood units logged</p></div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">FILING BY ZONE, AUGUST</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:26px">
+          <div style="display:flex; align-items:center; gap:14px"><span style="flex:0 0 118px; font-size:12.5px; font-weight:700; color:#1E1E24">Zone Prithvi</span><div style="flex:1; height:20px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:83%; height:100%; background:#D81B60; border-radius:5px"></div></div><span style="flex:0 0 58px; font-size:11.5px; font-weight:700; color:#4A4A5A; text-align:right">15 / 18</span></div><div style="display:flex; align-items:center; gap:14px"><span style="flex:0 0 118px; font-size:12.5px; font-weight:700; color:#1E1E24">Zone Agni</span><div style="flex:1; height:20px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:74%; height:100%; background:#D81B60; border-radius:5px"></div></div><span style="flex:0 0 58px; font-size:11.5px; font-weight:700; color:#4A4A5A; text-align:right">14 / 19</span></div><div style="display:flex; align-items:center; gap:14px"><span style="flex:0 0 118px; font-size:12.5px; font-weight:700; color:#1E1E24">Zone Vayu</span><div style="flex:1; height:20px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:63%; height:100%; background:#D81B60; border-radius:5px"></div></div><span style="flex:0 0 58px; font-size:11.5px; font-weight:700; color:#4A4A5A; text-align:right">12 / 19</span></div><div style="display:flex; align-items:center; gap:14px"><span style="flex:0 0 118px; font-size:12.5px; font-weight:700; color:#1E1E24">Zone Akash</span><div style="flex:1; height:20px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:37%; height:100%; background:#880E4F; border-radius:5px"></div></div><span style="flex:0 0 58px; font-size:11.5px; font-weight:700; color:#880E4F; text-align:right">7 / 19</span></div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">ADDRESSED TO THE DAC</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:9px; margin-bottom:0">
+          <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:12px; padding:17px 19px">
+            <div style="display:flex; align-items:center; gap:9px; margin-bottom:9px"><span style="background:#D81B60; color:#FFFFFF; font-size:9px; font-weight:700; letter-spacing:0.6px; padding:3px 8px; border-radius:4px">UNREAD</span><span style="font-size:10.5px; font-weight:700; color:#880E4F">FOR THE 12 SEPTEMBER SITTING</span></div>
+            <p style="font-size:15.5px; font-weight:800; color:#1E1E24; margin:0 0 7px; line-height:1.3">Mid-year review papers — three clubs proposed for termination</p>
+            <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0 0 12px">Delhi Imperia, Starex University and DAVIM have filed nothing since June. The secretariat's note and each club's last three reports are attached for the committee's view before the DRR acts.</p>
+            <div style="display:flex; gap:9px; flex-wrap:wrap"><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">Read the papers →</span><span style="font-size:12px; color:#71717A">3 September · District secretariat</span></div>
+          </div>
+          <div style="border:1px solid #F3E5EB; border-radius:12px; padding:17px 19px">
+            <p style="font-size:15px; font-weight:800; color:#1E1E24; margin:0 0 6px; line-height:1.3">Point-system methodology, revision two — comments invited</p>
+            <p style="font-size:12px; color:#71717A; margin:0">28 August · District secretariat · comments close 10 September</p>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:16px; padding:22px 24px; margin-bottom:16px">
+          <p style="font-size:10.5px; font-weight:700; letter-spacing:0.9px; color:#880E4F; margin:0 0 12px">A CHANGE FROM TODAY'S BUILD</p>
+          <p style="font-size:13px; line-height:1.6; color:#1E1E24; margin:0 0 12px">The portal currently refuses DAC accounts outright — <span style="color:#880E4F; font-weight:600">LoginModal.jsx</span> returns "DAC Members do not have access to District or Club Portals" for <span style="color:#880E4F; font-weight:600">dac_member</span>, while <span style="color:#880E4F; font-weight:600">PortalPage.jsx</span> already lets the secretariat address announcements to them.</p>
+          <p style="font-size:13px; line-height:1.6; color:#4A4A5A; margin:0">So a DAC broadcast today has no inbox to land in. This screen is that inbox, plus the read-only numbers a committee needs to advise on. Nothing here writes.</p>
+        </div>
+        <div style="border:1px solid rgba(216,27,96,0.12); border-radius:16px; padding:20px 22px; margin-bottom:16px">
+          <p style="font-size:10.5px; font-weight:700; letter-spacing:0.9px; color:#D81B60; margin:0 0 13px">WHAT A DAC MEMBER CANNOT SEE</p>
+          <div style="display:flex; flex-direction:column; gap:9px; font-size:12.5px">
+            <div style="padding-bottom:9px; border-bottom:1px solid #F3E5EB"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Any individual club's points</p><p style="font-size:11.5px; color:#71717A; margin:0">Advice should not turn into scoring</p></div><div style="padding-bottom:9px; border-bottom:1px solid #F3E5EB"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Officer phone numbers and blood groups</p><p style="font-size:11.5px; color:#71717A; margin:0">Not needed to advise</p></div><div style="padding-bottom:9px; border-bottom:1px solid #F3E5EB"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">The scoring queue</p><p style="font-size:11.5px; color:#71717A; margin:0">Officers score; the committee reviews the method</p></div>
+          </div>
+        </div>
+        <div style="background:#FDF8FA; border:1px solid #F3E5EB; border-radius:16px; padding:20px 22px">
+          <p style="font-size:13px; font-weight:800; color:#1E1E24; margin:0 0 9px">Papers, not dashboards</p>
+          <p style="font-size:12px; line-height:1.6; color:#4A4A5A; margin:0">Most DAC members are past DRRs who sit a handful of times a year. The thing they actually need is the document pack before a sitting, which is why an announcement carrying attachments is the loudest element on the page and the statistics are a quiet band above it.</p>
+        </div>
+      </div>
+    </div>
+  </div></div></div>
+<div style="width:768px; flex:0 0 768px"><div style="display:flex; align-items:baseline; gap:9px; margin-bottom:9px"><span style="font-size:11px; font-weight:800; letter-spacing:1.2px; color:#D81B60">TABLET · 768</span><span style="font-size:11.5px; color:#71717A">Statistics band to 4-up; the papers card stays the loudest element</span></div><div style="width:768px; box-sizing:border-box; background:#FFFFFF; border-radius:14px; overflow:hidden; box-shadow:0 14px 36px rgba(216,27,96,0.13)"><div style="height:54px; padding:0 20px; display:flex; align-items:center; justify-content:space-between; background:#18181B">
+    <div style="display:flex; align-items:center; gap:18px">
+      <div style="display:flex; align-items:center; gap:11px"><img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:21px; width:auto; display:block"><span style="font-size:9.5px; font-weight:800; letter-spacing:1.2px; color:rgba(255,255,255,0.6); padding-left:11px; border-left:1px solid rgba(255,255,255,0.15)">DAC</span></div>
+      <div style="display:flex; gap:14px; font-size:11.5px; font-weight:600; color:rgba(255,255,255,0.6)"><span style="color:#FFFFFF">Overview</span><span>Announcements</span><span>Calendar</span><span>Resources</span></div>
+    </div>
+    <span style="font-size:11.5px; color:rgba(255,255,255,0.5)">PDRR Rtr. Kartik Kumar · DAC member</span>
+  </div>
+  <div style="padding:22px 20px 26px">
+    <div style="display:block; ">
+      <div>
+        <p style="font-size:10.5px; font-weight:700; letter-spacing:1px; color:#D81B60; margin:0 0 8px">DISTRICT ADVISORY COMMITTEE</p>
+        <h2 style="font-size:23px; font-weight:800; letter-spacing:-0.5px; color:#1E1E24; margin:0 0 7px; line-height:1.2">Where the district stands, as of 4 September</h2>
+        <p style="font-size:13.5px; line-height:1.6; color:#4A4A5A; margin:0 0 22px">Read-only. You are here to advise, so this view carries the numbers and the papers, and none of the buttons that change them.</p>
+
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px">
+          <div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:16px 18px"><p style="font-size:25px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">75</p><p style="font-size:11.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Clubs in the district</p></div><div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:16px 18px"><p style="font-size:25px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">48</p><p style="font-size:11.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Filed for August</p></div><div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:16px 18px"><p style="font-size:25px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">9</p><p style="font-size:11.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Chartered this year</p></div><div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:16px 18px"><p style="font-size:25px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">1,847</p><p style="font-size:11.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Blood units logged</p></div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">FILING BY ZONE, AUGUST</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:26px">
+          <div style="display:flex; align-items:center; gap:14px"><span style="flex:0 0 118px; font-size:12.5px; font-weight:700; color:#1E1E24">Zone Prithvi</span><div style="flex:1; height:20px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:83%; height:100%; background:#D81B60; border-radius:5px"></div></div><span style="flex:0 0 58px; font-size:11.5px; font-weight:700; color:#4A4A5A; text-align:right">15 / 18</span></div><div style="display:flex; align-items:center; gap:14px"><span style="flex:0 0 118px; font-size:12.5px; font-weight:700; color:#1E1E24">Zone Agni</span><div style="flex:1; height:20px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:74%; height:100%; background:#D81B60; border-radius:5px"></div></div><span style="flex:0 0 58px; font-size:11.5px; font-weight:700; color:#4A4A5A; text-align:right">14 / 19</span></div><div style="display:flex; align-items:center; gap:14px"><span style="flex:0 0 118px; font-size:12.5px; font-weight:700; color:#1E1E24">Zone Vayu</span><div style="flex:1; height:20px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:63%; height:100%; background:#D81B60; border-radius:5px"></div></div><span style="flex:0 0 58px; font-size:11.5px; font-weight:700; color:#4A4A5A; text-align:right">12 / 19</span></div><div style="display:flex; align-items:center; gap:14px"><span style="flex:0 0 118px; font-size:12.5px; font-weight:700; color:#1E1E24">Zone Akash</span><div style="flex:1; height:20px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:37%; height:100%; background:#880E4F; border-radius:5px"></div></div><span style="flex:0 0 58px; font-size:11.5px; font-weight:700; color:#880E4F; text-align:right">7 / 19</span></div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">ADDRESSED TO THE DAC</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:9px; margin-bottom:20px">
+          <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:12px; padding:17px 19px">
+            <div style="display:flex; align-items:center; gap:9px; margin-bottom:9px"><span style="background:#D81B60; color:#FFFFFF; font-size:9px; font-weight:700; letter-spacing:0.6px; padding:3px 8px; border-radius:4px">UNREAD</span><span style="font-size:10.5px; font-weight:700; color:#880E4F">FOR THE 12 SEPTEMBER SITTING</span></div>
+            <p style="font-size:15.5px; font-weight:800; color:#1E1E24; margin:0 0 7px; line-height:1.3">Mid-year review papers — three clubs proposed for termination</p>
+            <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0 0 12px">Delhi Imperia, Starex University and DAVIM have filed nothing since June. The secretariat's note and each club's last three reports are attached for the committee's view before the DRR acts.</p>
+            <div style="display:flex; gap:9px; flex-wrap:wrap"><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">Read the papers →</span><span style="font-size:12px; color:#71717A">3 September · District secretariat</span></div>
+          </div>
+          <div style="border:1px solid #F3E5EB; border-radius:12px; padding:17px 19px">
+            <p style="font-size:15px; font-weight:800; color:#1E1E24; margin:0 0 6px; line-height:1.3">Point-system methodology, revision two — comments invited</p>
+            <p style="font-size:12px; color:#71717A; margin:0">28 August · District secretariat · comments close 10 September</p>
+          </div>
+        </div>
+      </div>
+      <div style="padding:16px 18px; background:#FDF8FA; border:1px solid #F3E5EB; border-radius:12px"><p style="font-size:11.5px; line-height:1.6; color:#4A4A5A; margin:0"><span style="font-weight:700; color:#1E1E24">Papers, not dashboards.</span> DAC members are largely past DRRs who sit a few times a year. What they need is the document pack before a sitting, so the announcement carrying attachments is the loudest thing on the page.</p></div>
+    </div>
+  </div></div></div><div style="width:390px; flex:0 0 390px"><div style="display:flex; align-items:baseline; gap:9px; margin-bottom:9px"><span style="font-size:11px; font-weight:800; letter-spacing:1.2px; color:#D81B60">MOBILE · 390</span><span style="font-size:11.5px; color:#71717A">Papers first, numbers as a 2×2 above them</span></div><div style="width:390px; box-sizing:border-box; background:#FFFFFF; border-radius:14px; overflow:hidden; box-shadow:0 14px 36px rgba(216,27,96,0.13)"><div style="height:52px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; background:#18181B"><img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:20px; width:auto; display:block"><div style="display:flex; align-items:center; gap:12px"><span style="font-size:10.5px; color:rgba(255,255,255,0.5)">DAC</span><div style="display:flex; flex-direction:column; gap:3px"><div style="width:16px; height:1.5px; background:#FFFFFF"></div><div style="width:16px; height:1.5px; background:#FFFFFF"></div><div style="width:16px; height:1.5px; background:#FFFFFF"></div></div></div></div>
+  <div style="padding:18px 16px 22px">
+    <div style="display:block; ">
+      <div>
+        <p style="font-size:10.5px; font-weight:700; letter-spacing:1px; color:#D81B60; margin:0 0 8px">DISTRICT ADVISORY COMMITTEE</p>
+        <h2 style="font-size:21px; font-weight:800; letter-spacing:-0.5px; color:#1E1E24; margin:0 0 7px; line-height:1.2">Where the district stands, September</h2>
+        <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0 0 18px">Read-only. You are here to advise, so this view carries the numbers and the papers, and none of the buttons that change them.</p>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px">
+          <div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:13px 14px"><p style="font-size:21px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">75</p><p style="font-size:10.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Clubs in the district</p></div><div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:13px 14px"><p style="font-size:21px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">48</p><p style="font-size:10.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Filed for August</p></div><div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:13px 14px"><p style="font-size:21px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">9</p><p style="font-size:10.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Chartered this year</p></div><div style="border:1px solid rgba(216,27,96,0.12); border-radius:12px; padding:13px 14px"><p style="font-size:21px; font-weight:800; color:#1E1E24; letter-spacing:-0.6px; margin:0; line-height:1">1,847</p><p style="font-size:10.5px; font-weight:600; color:#4A4A5A; margin:5px 0 0; line-height:1.4">Blood units logged</p></div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">FILING BY ZONE, AUGUST</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px">
+          <div style="display:flex; align-items:center; gap:10px"><span style="flex:0 0 82px; font-size:11.5px; font-weight:700; color:#1E1E24">Prithvi</span><div style="flex:1; height:18px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:83%; height:100%; background:#D81B60; border-radius:5px"></div></div><span style="flex:0 0 46px; font-size:11.5px; font-weight:700; color:#4A4A5A; text-align:right">15 / 18</span></div><div style="display:flex; align-items:center; gap:10px"><span style="flex:0 0 82px; font-size:11.5px; font-weight:700; color:#1E1E24">Agni</span><div style="flex:1; height:18px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:74%; height:100%; background:#D81B60; border-radius:5px"></div></div><span style="flex:0 0 46px; font-size:11.5px; font-weight:700; color:#4A4A5A; text-align:right">14 / 19</span></div><div style="display:flex; align-items:center; gap:10px"><span style="flex:0 0 82px; font-size:11.5px; font-weight:700; color:#1E1E24">Vayu</span><div style="flex:1; height:18px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:63%; height:100%; background:#D81B60; border-radius:5px"></div></div><span style="flex:0 0 46px; font-size:11.5px; font-weight:700; color:#4A4A5A; text-align:right">12 / 19</span></div><div style="display:flex; align-items:center; gap:10px"><span style="flex:0 0 82px; font-size:11.5px; font-weight:700; color:#1E1E24">Akash</span><div style="flex:1; height:18px; border-radius:5px; background:#FDF8FA; overflow:hidden"><div style="width:37%; height:100%; background:#880E4F; border-radius:5px"></div></div><span style="flex:0 0 46px; font-size:11.5px; font-weight:700; color:#880E4F; text-align:right">7 / 19</span></div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">ADDRESSED TO THE DAC</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:9px; margin-bottom:20px">
+          <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:12px; padding:15px 16px">
+            <div style="display:flex; align-items:center; gap:9px; margin-bottom:9px"><span style="background:#D81B60; color:#FFFFFF; font-size:9px; font-weight:700; letter-spacing:0.6px; padding:3px 8px; border-radius:4px">UNREAD</span><span style="font-size:10.5px; font-weight:700; color:#880E4F">FOR THE 12 SEPTEMBER SITTING</span></div>
+            <p style="font-size:14.5px; font-weight:800; color:#1E1E24; margin:0 0 7px; line-height:1.3">Mid-year review papers — three clubs proposed for termination</p>
+            <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0 0 12px">Delhi Imperia, Starex University and DAVIM have filed nothing since June. The secretariat's note and each club's last three reports are attached for the committee's view before the DRR acts.</p>
+            <div style="display:flex; gap:9px; flex-wrap:wrap"><span style="min-height:44px; display:inline-flex; align-items:center; padding:0 8px; margin:0 -8px; font-size:12px; font-weight:700; color:#D81B60">Read the papers →</span><span style="font-size:12px; color:#71717A">3 September · District secretariat</span></div>
+          </div>
+          <div style="border:1px solid #F3E5EB; border-radius:12px; padding:15px 16px">
+            <p style="font-size:14px; font-weight:800; color:#1E1E24; margin:0 0 6px; line-height:1.3">Point-system methodology, revision two — comments invited</p>
+            <p style="font-size:12px; color:#71717A; margin:0">28 August · District secretariat · comments close 10 September</p>
+          </div>
+        </div>
+      </div>
+      <div style="padding:16px 18px; background:#FDF8FA; border:1px solid #F3E5EB; border-radius:12px"><p style="font-size:11.5px; line-height:1.6; color:#4A4A5A; margin:0"><span style="font-weight:700; color:#1E1E24">Papers, not dashboards.</span> DAC members are largely past DRRs who sit a few times a year. What they need is the document pack before a sitting, so the announcement carrying attachments is the loudest thing on the page.</p></div>
+    </div>
+  </div></div></div>
+</div>
+</div>
+<!-- ══════════ 15. CLUB MEMBER ══════════ -->
+<div>
+<div style="display:flex; align-items:baseline; gap:12px; margin-bottom:12px">
+  <span style="font-size:13px; font-weight:800; letter-spacing:1.5px; color:#D81B60">/portal/dashboard</span>
+  <span style="font-size:19px; font-weight:800; color:#1E1E24; letter-spacing:-0.3px">Club member</span>
+  <span style="font-size:13px; color:#71717A">The same route again, for the ~300 members who hold no office</span>
+</div>
+<div style="display:flex; gap:26px; align-items:flex-start">
+<div style="flex:0 0 1440px"><div data-screen-label="Club member" style="width:1440px; box-sizing:border-box; background:#FFFFFF; border-radius:16px; overflow:hidden; box-shadow:0 20px 50px rgba(216,27,96,0.14)"><div style="height:58px; padding:0 28px; display:flex; align-items:center; justify-content:space-between; background:#18181B">
+    <div style="display:flex; align-items:center; gap:26px">
+      <div style="display:flex; align-items:center; gap:11px"><img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:24px; width:auto; display:block"></div>
+      <div style="display:flex; gap:20px; font-size:12.5px; font-weight:600; color:rgba(255,255,255,0.6)"><span style="color:#FFFFFF">My club</span><span>Announcements</span><span>Calendar</span><span>Resources</span></div>
+    </div>
+    <span style="font-size:11.5px; color:rgba(255,255,255,0.5)">Rtr. Meera Nair · Delhi South East · member</span>
+  </div>
+  <div style="padding:30px 28px 36px">
+    <div style="display:grid; grid-template-columns:1fr 320px; gap:26px">
+      <div>
+        <p style="font-size:10.5px; font-weight:700; letter-spacing:1px; color:#D81B60; margin:0 0 8px">ROTARACT CLUB OF DELHI SOUTH EAST</p>
+        <h2 style="font-size:27px; font-weight:800; letter-spacing:-0.5px; color:#1E1E24; margin:0 0 7px; line-height:1.2">Your club in August</h2>
+        <p style="font-size:13.5px; line-height:1.6; color:#4A4A5A; margin:0 0 22px; max-width:580px">Three activities, 280 people reached. Your president files the report — you can see what went in and add a photo to any of it.</p>
+
+        <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:14px; padding:20px 22px; margin-bottom:22px">
+          <p style="font-size:10px; font-weight:700; letter-spacing:0.9px; color:#880E4F; margin:0 0 9px">ONE THING WOULD HELP</p>
+          <p style="font-size:18px; font-weight:800; color:#1E1E24; margin:0 0 7px; line-height:1.3">The club meeting on 3 August has no photo</p>
+          <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0 0 14px">Without one it can't go on the public showcase. If you have a picture from that evening on your phone, that's the whole task.</p>
+          <div style="display:flex; ; gap:9px">
+            <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; background:#D81B60; color:#FFFFFF; font-size:13px; font-weight:700; padding:13px 22px; border-radius:8px; text-align:center">Add a photo</div>
+            <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; border:2px solid #D81B60; color:#D81B60; font-size:13px; font-weight:700; padding:11px 20px; border-radius:8px; text-align:center">Not mine to add</div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">WHAT THE CLUB DID</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:9px; margin-bottom:26px">
+          <div style="display:flex; gap:14px; align-items:center; border:1px solid #F3E5EB; border-radius:11px; padding:13px 15px">
+            <div style="flex:0 0 62px; height:48px; border-radius:7px; overflow:hidden; background:#FDF8FA; display:flex; align-items:center; justify-content:center"><image-slot id="mem-rv-1440" shape="rect" placeholder=""></image-slot></div>
+            <div style="flex:1; min-width:0"><p style="font-size:13.5px; font-weight:800; color:#1E1E24; margin:0 0 3px; line-height:1.3">Blood donation camp with Rotary Blood Bank</p><p style="font-size:11.5px; color:#71717A; margin:0; line-height:1.4">24 Aug · 180 reached · with Rotary Blood Bank</p></div>
+            
+          </div><div style="display:flex; gap:14px; align-items:center; border:1px solid #F3E5EB; border-radius:11px; padding:13px 15px">
+            <div style="flex:0 0 62px; height:48px; border-radius:7px; overflow:hidden; background:#FDF8FA; display:flex; align-items:center; justify-content:center"><image-slot id="mem-zf-1440" shape="rect" placeholder=""></image-slot></div>
+            <div style="flex:1; min-width:0"><p style="font-size:13.5px; font-weight:800; color:#1E1E24; margin:0 0 3px; line-height:1.3">Zone Agni fellowship</p><p style="font-size:11.5px; color:#71717A; margin:0; line-height:1.4">16 Aug · 60 attended</p></div>
+            
+          </div><div style="display:flex; gap:14px; align-items:center; border:1px solid rgba(216,27,96,0.25); background:#FDF0F5; border-radius:11px; padding:13px 15px">
+            <div style="flex:0 0 62px; height:48px; border-radius:7px; overflow:hidden; background:#FBE4EC; display:flex; align-items:center; justify-content:center"><span style="font-size:8px; font-weight:700; color:#880E4F">NO PHOTO</span></div>
+            <div style="flex:1; min-width:0"><p style="font-size:13.5px; font-weight:800; color:#1E1E24; margin:0 0 3px; line-height:1.3">Monthly club meeting</p><p style="font-size:11.5px; color:#880E4F; margin:0; line-height:1.4">3 Aug · 40 attended · no photo yet</p></div>
+            <span style="flex:0 0 auto; font-size:11.5px; font-weight:700; color:#D81B60">Add</span>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">COMING UP</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:8px">
+          <div style="display:flex; gap:14px; align-items:center; padding:12px 0; border-bottom:1px solid #F3E5EB">
+            <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; flex:0 0 46px; text-align:center; padding:7px 0; border-radius:7px; background:#FDF8FA"><p style="font-size:16px; font-weight:800; color:#1E1E24; margin:0; line-height:1">06</p><p style="font-size:8.5px; font-weight:700; letter-spacing:0.5px; color:#71717A; margin:2px 0 0">SEP</p></div>
+            <div style="flex:1; min-width:0"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 2px; line-height:1.3">Club Leadership Seminar</p><p style="font-size:11px; color:#71717A; margin:0; line-height:1.4">India Habitat Centre · office bearers</p></div>
+          </div><div style="display:flex; gap:14px; align-items:center; padding:12px 0; border-bottom:1px solid #F3E5EB">
+            <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; flex:0 0 46px; text-align:center; padding:7px 0; border-radius:7px; background:#FDF8FA"><p style="font-size:16px; font-weight:800; color:#1E1E24; margin:0; line-height:1">12</p><p style="font-size:8.5px; font-weight:700; letter-spacing:0.5px; color:#71717A; margin:2px 0 0">SEP</p></div>
+            <div style="flex:1; min-width:0"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 2px; line-height:1.3">Club meeting</p><p style="font-size:11px; color:#71717A; margin:0; line-height:1.4">Our usual Tuesday, 8 pm</p></div>
+          </div><div style="display:flex; gap:14px; align-items:center; padding:12px 0; border-bottom:1px solid #F3E5EB">
+            <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; flex:0 0 46px; text-align:center; padding:7px 0; border-radius:7px; background:#FDF8FA"><p style="font-size:16px; font-weight:800; color:#1E1E24; margin:0; line-height:1">27</p><p style="font-size:8.5px; font-weight:700; letter-spacing:0.5px; color:#71717A; margin:2px 0 0">SEP</p></div>
+            <div style="flex:1; min-width:0"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 2px; line-height:1.3">Mahadan 9.0 — district blood camp</p><p style="font-size:11px; color:#71717A; margin:0; line-height:1.4">Donors needed. Register through the club group</p></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="border:1px solid rgba(216,27,96,0.12); border-radius:16px; padding:20px 22px; margin-bottom:16px">
+          <p style="font-size:10.5px; font-weight:700; letter-spacing:0.9px; color:#D81B60; margin:0 0 13px">THE SAME SCREEN, THREE ROLES</p>
+          <div style="display:flex; flex-direction:column; gap:11px">
+            <div style="padding:12px 14px; border-radius:9px; background:#FDF8FA"><p style="font-size:12.5px; font-weight:800; color:#1E1E24; margin:0 0 4px">President</p><p style="font-size:11.5px; line-height:1.5; color:#4A4A5A; margin:0">Everything here, plus Start the report, the month’s score, and the query inbox</p></div><div style="padding:12px 14px; border-radius:9px; background:#FDF8FA"><p style="font-size:12.5px; font-weight:800; color:#1E1E24; margin:0 0 4px">Secretary</p><p style="font-size:11.5px; line-height:1.5; color:#4A4A5A; margin:0">Everything the president sees, and can file on their behalf</p></div><div style="padding:12px 14px; border-radius:9px; background:#FDF0F5; border:1px solid rgba(216,27,96,0.2)"><p style="font-size:12.5px; font-weight:800; color:#1E1E24; margin:0 0 4px">Member — shown here</p><p style="font-size:11.5px; line-height:1.5; color:#4A4A5A; margin:0">This view. Read the month, add a photo, see what’s coming</p></div>
+          </div>
+          <p style="margin:14px 0 0; padding-top:13px; border-top:1px solid #F3E5EB; font-size:12px; line-height:1.55; color:#4A4A5A">One layout, three capability sets. Officers get actions added to this page rather than a different page, so a member who becomes president next July already knows where everything is.</p>
+        </div>
+        <div style="border:1px solid rgba(216,27,96,0.12); border-radius:16px; padding:20px 22px; margin-bottom:16px">
+          <p style="font-size:10.5px; font-weight:700; letter-spacing:0.9px; color:#D81B60; margin:0 0 13px">A MEMBER NEVER SEES</p>
+          <div style="display:flex; flex-direction:column; gap:9px">
+            <div style="padding-bottom:9px; border-bottom:1px solid #F3E5EB"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">The club’s points</p><p style="font-size:11.5px; line-height:1.45; color:#71717A; margin:0">Scores are for office bearers to act on, not the group chat to argue about</p></div><div style="padding-bottom:9px; border-bottom:1px solid #F3E5EB"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">Other clubs’ anything</p><p style="font-size:11.5px; line-height:1.45; color:#71717A; margin:0">Same rule as everywhere else in the portal</p></div><div style="padding-bottom:9px; border-bottom:1px solid #F3E5EB"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 3px">The president database</p><p style="font-size:11.5px; line-height:1.45; color:#71717A; margin:0">Contact details stay with officers</p></div>
+          </div>
+        </div>
+        <div style="background:#FDF8FA; border:1px solid #F3E5EB; border-radius:16px; padding:20px 22px">
+          <p style="font-size:13px; font-weight:800; color:#1E1E24; margin:0 0 9px">Why give members a login at all</p>
+          <p style="font-size:12px; line-height:1.6; color:#4A4A5A; margin:0">Because the missing photo problem is a member problem. The president wasn't holding the camera. Handing three hundred members one small, obvious task — attach the picture you already have — fixes more showcase entries than any reminder to office bearers, and it costs one read-only screen.</p>
+        </div>
+      </div>
+  </div>
+</div></div></div>
+<div style="width:768px; flex:0 0 768px"><div style="display:flex; align-items:baseline; gap:9px; margin-bottom:9px"><span style="font-size:11px; font-weight:800; letter-spacing:1.2px; color:#D81B60">TABLET · 768</span><span style="font-size:11.5px; color:#71717A">One column; the role matrix folds into a single note</span></div><div style="width:768px; box-sizing:border-box; background:#FFFFFF; border-radius:14px; overflow:hidden; box-shadow:0 14px 36px rgba(216,27,96,0.13)"><div style="height:54px; padding:0 20px; display:flex; align-items:center; justify-content:space-between; background:#18181B">
+    <div style="display:flex; align-items:center; gap:18px">
+      <div style="display:flex; align-items:center; gap:11px"><img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:21px; width:auto; display:block"></div>
+      <div style="display:flex; gap:14px; font-size:11.5px; font-weight:600; color:rgba(255,255,255,0.6)"><span style="color:#FFFFFF">My club</span><span>Announcements</span><span>Calendar</span><span>Resources</span></div>
+    </div>
+    <span style="font-size:11.5px; color:rgba(255,255,255,0.5)">Rtr. Meera Nair · Delhi South East · member</span>
+  </div>
+  <div style="padding:22px 20px 26px">
+    <div style="display:block; ">
+      <div>
+        <p style="font-size:10.5px; font-weight:700; letter-spacing:1px; color:#D81B60; margin:0 0 8px">ROTARACT CLUB OF DELHI SOUTH EAST</p>
+        <h2 style="font-size:23px; font-weight:800; letter-spacing:-0.5px; color:#1E1E24; margin:0 0 7px; line-height:1.2">Your club in August</h2>
+        <p style="font-size:13.5px; line-height:1.6; color:#4A4A5A; margin:0 0 22px">Three activities, 280 people reached. Your president files the report — you can see what went in and add a photo to any of it.</p>
+
+        <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:14px; padding:20px 22px; margin-bottom:22px">
+          <p style="font-size:10px; font-weight:700; letter-spacing:0.9px; color:#880E4F; margin:0 0 9px">ONE THING WOULD HELP</p>
+          <p style="font-size:18px; font-weight:800; color:#1E1E24; margin:0 0 7px; line-height:1.3">The club meeting on 3 August has no photo</p>
+          <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0 0 14px">Without one it can't go on the public showcase. If you have a picture from that evening on your phone, that's the whole task.</p>
+          <div style="display:flex; ; gap:9px">
+            <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; background:#D81B60; color:#FFFFFF; font-size:13px; font-weight:700; padding:13px 22px; border-radius:8px; text-align:center">Add a photo</div>
+            <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; border:2px solid #D81B60; color:#D81B60; font-size:13px; font-weight:700; padding:11px 20px; border-radius:8px; text-align:center">Not mine to add</div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">WHAT THE CLUB DID</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:9px; margin-bottom:26px">
+          <div style="display:flex; gap:14px; align-items:center; border:1px solid #F3E5EB; border-radius:11px; padding:13px 15px">
+            <div style="flex:0 0 62px; height:48px; border-radius:7px; overflow:hidden; background:#FDF8FA; display:flex; align-items:center; justify-content:center"><image-slot id="mem-rv-768" shape="rect" placeholder=""></image-slot></div>
+            <div style="flex:1; min-width:0"><p style="font-size:13.5px; font-weight:800; color:#1E1E24; margin:0 0 3px; line-height:1.3">Blood donation camp with Rotary Blood Bank</p><p style="font-size:11.5px; color:#71717A; margin:0; line-height:1.4">24 Aug · 180 reached · with Rotary Blood Bank</p></div>
+            
+          </div><div style="display:flex; gap:14px; align-items:center; border:1px solid #F3E5EB; border-radius:11px; padding:13px 15px">
+            <div style="flex:0 0 62px; height:48px; border-radius:7px; overflow:hidden; background:#FDF8FA; display:flex; align-items:center; justify-content:center"><image-slot id="mem-zf-768" shape="rect" placeholder=""></image-slot></div>
+            <div style="flex:1; min-width:0"><p style="font-size:13.5px; font-weight:800; color:#1E1E24; margin:0 0 3px; line-height:1.3">Zone Agni fellowship</p><p style="font-size:11.5px; color:#71717A; margin:0; line-height:1.4">16 Aug · 60 attended</p></div>
+            
+          </div><div style="display:flex; gap:14px; align-items:center; border:1px solid rgba(216,27,96,0.25); background:#FDF0F5; border-radius:11px; padding:13px 15px">
+            <div style="flex:0 0 62px; height:48px; border-radius:7px; overflow:hidden; background:#FBE4EC; display:flex; align-items:center; justify-content:center"><span style="font-size:8px; font-weight:700; color:#880E4F">NO PHOTO</span></div>
+            <div style="flex:1; min-width:0"><p style="font-size:13.5px; font-weight:800; color:#1E1E24; margin:0 0 3px; line-height:1.3">Monthly club meeting</p><p style="font-size:11.5px; color:#880E4F; margin:0; line-height:1.4">3 Aug · 40 attended · no photo yet</p></div>
+            <span style="flex:0 0 auto; font-size:11.5px; font-weight:700; color:#D81B60">Add</span>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">COMING UP</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:20px">
+          <div style="display:flex; gap:14px; align-items:center; padding:12px 0; border-bottom:1px solid #F3E5EB">
+            <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; flex:0 0 46px; text-align:center; padding:7px 0; border-radius:7px; background:#FDF8FA"><p style="font-size:16px; font-weight:800; color:#1E1E24; margin:0; line-height:1">06</p><p style="font-size:8.5px; font-weight:700; letter-spacing:0.5px; color:#71717A; margin:2px 0 0">SEP</p></div>
+            <div style="flex:1; min-width:0"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 2px; line-height:1.3">Club Leadership Seminar</p><p style="font-size:11px; color:#71717A; margin:0; line-height:1.4">India Habitat Centre · office bearers</p></div>
+          </div><div style="display:flex; gap:14px; align-items:center; padding:12px 0; border-bottom:1px solid #F3E5EB">
+            <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; flex:0 0 46px; text-align:center; padding:7px 0; border-radius:7px; background:#FDF8FA"><p style="font-size:16px; font-weight:800; color:#1E1E24; margin:0; line-height:1">12</p><p style="font-size:8.5px; font-weight:700; letter-spacing:0.5px; color:#71717A; margin:2px 0 0">SEP</p></div>
+            <div style="flex:1; min-width:0"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 2px; line-height:1.3">Club meeting</p><p style="font-size:11px; color:#71717A; margin:0; line-height:1.4">Our usual Tuesday, 8 pm</p></div>
+          </div><div style="display:flex; gap:14px; align-items:center; padding:12px 0; border-bottom:1px solid #F3E5EB">
+            <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; flex:0 0 46px; text-align:center; padding:7px 0; border-radius:7px; background:#FDF8FA"><p style="font-size:16px; font-weight:800; color:#1E1E24; margin:0; line-height:1">27</p><p style="font-size:8.5px; font-weight:700; letter-spacing:0.5px; color:#71717A; margin:2px 0 0">SEP</p></div>
+            <div style="flex:1; min-width:0"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 2px; line-height:1.3">Mahadan 9.0 — district blood camp</p><p style="font-size:11px; color:#71717A; margin:0; line-height:1.4">Donors needed. Register through the club group</p></div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:16px 18px; background:#FDF8FA; border:1px solid #F3E5EB; border-radius:12px"><p style="font-size:11.5px; line-height:1.6; color:#4A4A5A; margin:0"><span style="font-weight:700; color:#1E1E24">One layout, three capability sets.</span> Presidents and secretaries see this page with actions added — Start the report, the month's score, the query inbox — not a different page. A member sees the month, adds a photo, and never sees points or another club.</p></div>
+  </div>
+</div></div></div><div style="width:390px; flex:0 0 390px"><div style="display:flex; align-items:baseline; gap:9px; margin-bottom:9px"><span style="font-size:11px; font-weight:800; letter-spacing:1.2px; color:#D81B60">MOBILE · 390</span><span style="font-size:11.5px; color:#71717A">The whole screen is one task: attach the photo you already have</span></div><div style="width:390px; box-sizing:border-box; background:#FFFFFF; border-radius:14px; overflow:hidden; box-shadow:0 14px 36px rgba(216,27,96,0.13)"><div style="height:52px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; background:#18181B"><img src="assets/district-logo.jpg" alt="Rotaract District Organization 3011" style="height:20px; width:auto; display:block"><div style="display:flex; align-items:center; gap:12px"><span style="font-size:10.5px; color:rgba(255,255,255,0.5)">Member</span><div style="display:flex; flex-direction:column; gap:3px"><div style="width:16px; height:1.5px; background:#FFFFFF"></div><div style="width:16px; height:1.5px; background:#FFFFFF"></div><div style="width:16px; height:1.5px; background:#FFFFFF"></div></div></div></div>
+  <div style="padding:18px 16px 22px">
+    <div style="display:block; ">
+      <div>
+        <p style="font-size:10.5px; font-weight:700; letter-spacing:1px; color:#D81B60; margin:0 0 8px">ROTARACT CLUB OF DELHI SOUTH EAST</p>
+        <h2 style="font-size:21px; font-weight:800; letter-spacing:-0.5px; color:#1E1E24; margin:0 0 7px; line-height:1.2">Your club in August</h2>
+        <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0 0 18px">Three activities, 280 people reached. Your president files the report — you can see what went in and add a photo to any of it.</p>
+
+        <div style="border:1.5px solid #D81B60; background:#FDF0F5; border-radius:14px; padding:17px 18px; margin-bottom:18px">
+          <p style="font-size:10px; font-weight:700; letter-spacing:0.9px; color:#880E4F; margin:0 0 9px">ONE THING WOULD HELP</p>
+          <p style="font-size:16px; font-weight:800; color:#1E1E24; margin:0 0 7px; line-height:1.3">The club meeting on 3 August has no photo</p>
+          <p style="font-size:12.5px; line-height:1.6; color:#4A4A5A; margin:0 0 14px">Without one it can't go on the public showcase. If you have a picture from that evening on your phone, that's the whole task.</p>
+          <div style="display:flex; flex-direction:column; gap:9px">
+            <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; background:#D81B60; color:#FFFFFF; font-size:13px; font-weight:700; padding:13px 0; border-radius:8px; text-align:center">Add a photo</div>
+            <div style="min-height:44px; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; border:2px solid #D81B60; color:#D81B60; font-size:13px; font-weight:700; padding:11px 0; border-radius:8px; text-align:center">Not mine to add</div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">WHAT THE CLUB DID</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:9px; margin-bottom:20px">
+          <div style="display:flex; gap:12px; align-items:center; border:1px solid #F3E5EB; border-radius:11px; padding:12px 13px">
+            <div style="flex:0 0 54px; height:42px; border-radius:7px; overflow:hidden; background:#FDF8FA; display:flex; align-items:center; justify-content:center"><image-slot id="mem-rv-390" shape="rect" placeholder=""></image-slot></div>
+            <div style="flex:1; min-width:0"><p style="font-size:13px; font-weight:800; color:#1E1E24; margin:0 0 3px; line-height:1.3">Blood donation camp with Rotary Blood Bank</p><p style="font-size:11.5px; color:#71717A; margin:0; line-height:1.4">24 Aug · 180 reached · with Rotary Blood Bank</p></div>
+            
+          </div><div style="display:flex; gap:12px; align-items:center; border:1px solid #F3E5EB; border-radius:11px; padding:12px 13px">
+            <div style="flex:0 0 54px; height:42px; border-radius:7px; overflow:hidden; background:#FDF8FA; display:flex; align-items:center; justify-content:center"><image-slot id="mem-zf-390" shape="rect" placeholder=""></image-slot></div>
+            <div style="flex:1; min-width:0"><p style="font-size:13px; font-weight:800; color:#1E1E24; margin:0 0 3px; line-height:1.3">Zone Agni fellowship</p><p style="font-size:11.5px; color:#71717A; margin:0; line-height:1.4">16 Aug · 60 attended</p></div>
+            
+          </div><div style="display:flex; gap:12px; align-items:center; border:1px solid rgba(216,27,96,0.25); background:#FDF0F5; border-radius:11px; padding:12px 13px">
+            <div style="flex:0 0 54px; height:42px; border-radius:7px; overflow:hidden; background:#FBE4EC; display:flex; align-items:center; justify-content:center"><span style="font-size:8px; font-weight:700; color:#880E4F">NO PHOTO</span></div>
+            <div style="flex:1; min-width:0"><p style="font-size:13px; font-weight:800; color:#1E1E24; margin:0 0 3px; line-height:1.3">Monthly club meeting</p><p style="font-size:11.5px; color:#880E4F; margin:0; line-height:1.4">3 Aug · 40 attended · no photo yet</p></div>
+            <span style="flex:0 0 auto; font-size:11.5px; font-weight:700; color:#D81B60">Add</span>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:13px; margin-bottom:14px"><p style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:#D81B60; margin:0">COMING UP</p><div style="flex:1; height:1px; background:linear-gradient(90deg,#F3E5EB,rgba(243,229,235,0))"></div></div>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:20px">
+          <div style="display:flex; gap:12px; align-items:center; padding:11px 0; border-bottom:1px solid #F3E5EB">
+            <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; flex:0 0 42px; text-align:center; padding:7px 0; border-radius:7px; background:#FDF8FA"><p style="font-size:15px; font-weight:800; color:#1E1E24; margin:0; line-height:1">06</p><p style="font-size:8.5px; font-weight:700; letter-spacing:0.5px; color:#71717A; margin:2px 0 0">SEP</p></div>
+            <div style="flex:1; min-width:0"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 2px; line-height:1.3">Club Leadership Seminar</p><p style="font-size:11px; color:#71717A; margin:0; line-height:1.4">India Habitat Centre · office bearers</p></div>
+          </div><div style="display:flex; gap:12px; align-items:center; padding:11px 0; border-bottom:1px solid #F3E5EB">
+            <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; flex:0 0 42px; text-align:center; padding:7px 0; border-radius:7px; background:#FDF8FA"><p style="font-size:15px; font-weight:800; color:#1E1E24; margin:0; line-height:1">12</p><p style="font-size:8.5px; font-weight:700; letter-spacing:0.5px; color:#71717A; margin:2px 0 0">SEP</p></div>
+            <div style="flex:1; min-width:0"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 2px; line-height:1.3">Club meeting</p><p style="font-size:11px; color:#71717A; margin:0; line-height:1.4">Our usual Tuesday, 8 pm</p></div>
+          </div><div style="display:flex; gap:12px; align-items:center; padding:11px 0; border-bottom:1px solid #F3E5EB">
+            <div style="min-height:44px; box-sizing:border-box; display:flex; align-items:center; flex:0 0 42px; text-align:center; padding:7px 0; border-radius:7px; background:#FDF8FA"><p style="font-size:15px; font-weight:800; color:#1E1E24; margin:0; line-height:1">27</p><p style="font-size:8.5px; font-weight:700; letter-spacing:0.5px; color:#71717A; margin:2px 0 0">SEP</p></div>
+            <div style="flex:1; min-width:0"><p style="font-size:12.5px; font-weight:700; color:#1E1E24; margin:0 0 2px; line-height:1.3">Mahadan 9.0 — district blood camp</p><p style="font-size:11px; color:#71717A; margin:0; line-height:1.4">Donors needed. Register through the club group</p></div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:16px 18px; background:#FDF8FA; border:1px solid #F3E5EB; border-radius:12px"><p style="font-size:11.5px; line-height:1.6; color:#4A4A5A; margin:0"><span style="font-weight:700; color:#1E1E24">One layout, three capability sets.</span> Presidents and secretaries see this page with actions added — Start the report, the month's score, the query inbox — not a different page. A member sees the month, adds a photo, and never sees points or another club.</p></div>
+  </div>
+</div></div></div>
+</div>
+</div>
+
+</div>
+</x-dc>
+</body>
+</html>
