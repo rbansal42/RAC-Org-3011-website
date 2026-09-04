@@ -344,6 +344,44 @@ Cache per request (attach to `req.access`). `@RequirePermission(key)` + `Permiss
 
 Returns `{ user: {id, name, email, twoFactorEnabled}, profile: MemberProfileDto | null, roles, grants, clubs: {id, name, shortName, zoneId}[] /* clubs in scope for the header switcher */, theme }`. 401 when no session. Frontend calls it once on load and after login.
 
+### 4.8 RBAC is the primary deliverable (read before every task)
+
+RBAC is not a cross-cutting nicety here; it is the product's security boundary and the thing the district owner cares about most. Rules, all mandatory:
+
+1. **Definition of done for any route**: (a) `@RequirePermission` present, (b) scope asserted or `ScopeFilter` applied in the repository, (c) an e2e test that an in-scope caller succeeds AND an out-of-scope caller gets 404 (reads) or 403 (permission missing). A route without all three is not mergeable.
+2. **Deny by default**: `PermissionGuard` is registered globally (`APP_GUARD`). Routes without `@RequirePermission` are rejected at boot by a startup check (`RbacRouteAudit`) unless decorated `@Public()`; the check lists offending routes and exits non-zero.
+3. **No scope leakage through includes or filters**: `include=` and `filter[clubId]` are applied inside the same `ScopeFilter`-constrained query; a client can narrow, never widen.
+4. **404 not 403 for out-of-scope existing rows** so a President cannot enumerate other clubs' report ids.
+5. **Super Admin is a role, not a code path**: only `RbacResolverService` knows about `super_admin`; services never check role keys, only permission keys plus scope.
+6. **Frontend never enforces**: `can()` hides controls; every hidden control's request would still be refused by the API. Playwright tests assert both (control hidden AND API 403/404 when called directly).
+7. **Every grant/revoke is audited** and visible at `/portal/admin/audit`.
+
+Denial matrix (each cell is an e2e test in `test/rbac/matrix.e2e.ts`, generated from this table):
+
+| Action | member (club A) | president A | zrr (zone of A) | zrr (other zone) | dsc | project_admin (mission3011) | editing_team |
+|---|---|---|---|---|---|---|---|
+| GET /reports?filter[clubId]=A | 404/empty | 200 | 200 | empty | 200 | empty | 403 |
+| PATCH /reports/:idA {status:submitted} | 403 | 200 | 403 | 403 | 403 | 403 | 403 |
+| POST /reports/:idA/queries | 403 | 403 | 200 | 404 | 200 | 403 | 403 |
+| PATCH /clubs/A/points?month= (judged) | 403 | 403 | 403 | 403 | 200 | 403 | 403 |
+| GET /clubs/A/points | 200 | 200 | 200 | 404 | 200 | 404 | 403 |
+| GET /clubs/B/points (as A-scoped) | 404 | 404 | 404 (B other zone) | n/a | 200 | n/a | 403 |
+| PATCH /clubs/A/facts | 403 | 403 | 403 | 403 | 200 | 403 | 403 |
+| PATCH /members/:idInA {status:approved} | 403 | 200 | 403 | 403 | 200 | 403 | 403 |
+| PATCH /members/:idInB {status:approved} (as president A) | 403 | 404 | n/a | n/a | 200 | n/a | 403 |
+| POST /projects (submit) | 200 | 200 | 200 | 200 | 200 | 200 | 403 |
+| PATCH /projects/:idLeadA {status:published} | 403 | 403 | 200 | 404 | 200 | 403 | 403 |
+| PATCH /content-blocks/... {publish} | 403 | 403 | 403 | 403 | 403 | 403 | 200 |
+| PATCH /point-rules/:id | 403 | 403 | 403 | 403 | 403 | 403 | 403 (super_admin only via grant) |
+| POST /roles, POST /user-roles | 403 | 403 | 403 | 403 | 403 | 403 | 403 (super_admin only) |
+| POST /announcements audience={clubIds:[B]} (as president A) | 403 | 403 | 403 | 403 | 200 | 403 | 403 |
+| PATCH /mission3011/camps/:id {status:approved} | 403 | 403 | 403 | 403 | 403 | 200 | 403 |
+| PATCH /drishti/beneficiaries/:id (as mission3011 admin) | 403 | 403 | 403 | 403 | 403 | 403 | 403 |
+| GET /directory (opted-in only) | 200 | 200 | 200 | 200 | 200 | 200 | 403 |
+| GET /audit | 403 | 403 | 403 | 403 | 200 | 403 | 403 |
+
+Super Admin passes every cell. Where the table says 404 for a list, the response is 200 with `items: []` (`empty`).
+
 ---
 
 ## 5. API design (locked)
