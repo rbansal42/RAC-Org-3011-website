@@ -52,7 +52,7 @@ template exists.
 - [x] BullMQ `notifications.send` processor in the worker process (`WORKER=1`):
   email via `EmailProviderPool`, push via `web-push`; record `provider` on the
   outbox row; retry with backoff; dead-letter after N attempts. (M)
-- [ ] Template registry `src/notifications/templates/<key>.ts` exporting
+- [x] Template registry `src/notifications/templates/<key>.ts` exporting
   `subject`, `html`, `text`, `push`. All 26 keys from spec §7: `otp`,
   `member-registered`, `member-approved`, `member-rejected`, `report-queried`,
   `report-replied`, `report-scored`, `showcase-submitted`, `showcase-published`,
@@ -60,12 +60,23 @@ template exists.
   `booking-confirmed`, `booking-declined`, `booking-reminder`, `link-broken`,
   `event-reminder`, `enquiry-received`, `listing-verify`, `listing-verified`,
   `camp-submitted`, `camp-approved`, `ride-host-assigned`,
-  `contribution-approved`, `certificate-issued`. (L)
+  `contribution-approved`, `certificate-issued`. (L) DONE 2026-09-05
+  (`rac3011-api` PR #2, `6e27ed5`, merged+deployed). **Caveat**: 9 of the 26 keys
+  (`announcement`, all four `booking-*`, `event-reminder`, `contribution-approved`,
+  `certificate-issued`, `report-scored`) have no real caller anywhere in the
+  codebase yet — those modules (DRR bookings, announcements, effort log,
+  certificates) don't exist. Field names in those templates are best-effort
+  guesses from the spec; whoever wires up sections 1c/2A/3/4 below must
+  double-check the `notify({ data: {...} })` payload against the template file.
 - [x] Recipient rewrite for non-production (`recipient-rewrite.ts` exists) verified
   so testing never emails real members. (S)
-- [ ] Audit every existing `.notify()` call site (auth, enquiries, feedback,
+- [x] Audit every existing `.notify()` call site (auth, enquiries, feedback,
   link-health, members, imports, reports, showcase, careerbridge, mission3011,
-  ride) passes the data each template needs. (S)
+  ride) passes the data each template needs. (S) DONE 2026-09-05 — found and fixed
+  two real gaps: `showcase-admin.service.ts` wasn't passing `title`/`slug` to the
+  showcase-published/rejected templates, and `mission3011-camps.service.ts` was
+  passing a raw club id (`profile.clubId`) where the template needed a readable
+  club name (now resolved via `MeService.getClub()`).
 - [ ] Add the missing triggers: `event-reminder` (24h before RSVP going, cron),
   `report-scored`, `feedback-replied`, `drishti` and `rcl` have none and may not
   need any; confirm. (M)
