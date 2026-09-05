@@ -19,7 +19,7 @@ members, showcase, and all five subdomains), plus the 15-minute and daily
 
 ## 0. Urgent: fix before anything else
 
-- [ ] **Wire real email behind `NotificationPort`.** (M) `NotificationsModule` binds
+- [x] **Wire real email behind `NotificationPort`.** (M) DONE 2026-09-05 (`aaa57c9`, deployed) `NotificationsModule` binds
   the port to `ConsoleNotificationAdapter`, so every notification, including the
   login OTP, is only written to the container log. The `EmailProviderPool` with
   four transports exists and is unit-tested but nothing calls it. Login in
@@ -46,10 +46,10 @@ Schema exists (`NotificationOutbox`, `PushSubscription`, `Announcement`,
 template exists.
 
 ### 1a. Dispatch and outbox
-- [ ] `NotificationDispatchService` implementing `NotificationPort`: resolve
+- [x] `NotificationDispatchService` implementing `NotificationPort`: resolve
   `userId` recipients to emails and push subscriptions, render template, insert
   one outbox row per recipient per channel, enqueue `notifications.send`. (M)
-- [ ] BullMQ `notifications.send` processor in the worker process (`WORKER=1`):
+- [x] BullMQ `notifications.send` processor in the worker process (`WORKER=1`):
   email via `EmailProviderPool`, push via `web-push`; record `provider` on the
   outbox row; retry with backoff; dead-letter after N attempts. (M)
 - [ ] Template registry `src/notifications/templates/<key>.ts` exporting
@@ -61,7 +61,7 @@ template exists.
   `event-reminder`, `enquiry-received`, `listing-verify`, `listing-verified`,
   `camp-submitted`, `camp-approved`, `ride-host-assigned`,
   `contribution-approved`, `certificate-issued`. (L)
-- [ ] Recipient rewrite for non-production (`recipient-rewrite.ts` exists) verified
+- [x] Recipient rewrite for non-production (`recipient-rewrite.ts` exists) verified
   so testing never emails real members. (S)
 - [ ] Audit every existing `.notify()` call site (auth, enquiries, feedback,
   link-health, members, imports, reports, showcase, careerbridge, mission3011,
@@ -99,11 +99,12 @@ template exists.
 
 - [ ] `/portal/admin/events` EventsAdmin CRUD screen (create/edit/delete
   district events, capacity, RSVP toggle, cover image via AssetUrlField). (M)
-- [ ] `/portal/admin/events/:slug` EventCheckIn: camera QR via `@zxing/browser`
-  (dependency already installed, unused), manual member search, walk-in entry,
-  live per-club counts. (M)
 - [ ] `/portal/events` ClubEventTracker for `club_events:log` (club's own
   non-district events, feeds attendance adapter). (M)
+
+> The check-in desk that used to sit here (`/portal/admin/events/:slug`) is
+> superseded by section 2A: the members-only RSVP model it assumed cannot carry
+> guests, coupons, or an offline desk.
 - [ ] `/portal/feedback` member submit (general or event-scoped) and "mine" list. (S)
 - [ ] `/portal/admin/feedback` review queue: open/reviewed/closed, reply. (S)
 - [ ] `/portal/resources` member-side view of unlocked resources for the caller. (S)
@@ -112,6 +113,59 @@ template exists.
   page with permission-gated widgets. (M)
 - [ ] Calendar page: RSVP button state and "feedback after event" link on
   `EventPage` verified against the real API once feedback UI exists. (S)
+
+---
+
+## 2A. Event registration and check-in desk
+
+Design: `docs/superpowers/specs/2026-09-05-event-checkin-registration-design.md`
+(agreed with Rahul 2026-09-05). Replaces the members-only RSVP model with one
+registration spine covering members with accounts, members without, outside guests
+and walk-ins; folds check-in into that row; adds coupons and a live stats board.
+Needs its own implementation plan before dispatch.
+
+### Phase 1: usable at a venue with working wifi
+- [ ] Schema and expand migration: `event_registrations`, `event_coupons`,
+  `event_coupon_redemptions`, `Event.registrationRequired`, the identity check
+  constraint and the partial unique index on `(event_id, lower(guest_email))`;
+  backfill from `event_rsvps` and `event_checkins`. Old tables left in place. (L)
+- [ ] Registration paths: public form (`POST /public/events/:slug/registrations`,
+  throttled, honeypot, 409 at capacity), member self-registration
+  (`PUT /events/:id/registration`), desk-created registrations. (M)
+- [ ] Short-code generation (6 chars, no O/0/I/1, unique per event, retry on
+  collision) and per-registration tokens. (S)
+- [ ] `event-registered` template plus a reworked `event-reminder`, and the public
+  `GET /public/registrations/:token/qr.png` endpoint the email embeds. (M)
+- [ ] Desk endpoints: `POST /events/:id/checkins` accepting token, short code or
+  registration id with `clientId` idempotency and `occurredAt` clamping;
+  `POST /events/:id/coupon-redemptions`; both club-scoped per `events:checkin`. (M)
+- [ ] Coupon definition CRUD under `events:manage`, and a registrations CSV export. (S)
+- [ ] `GET /events/:id/stats`: registered/arrived/expected, ten-minute arrivals
+  histogram, per-club and per-zone turnout including registered-but-absent clubs,
+  per-coupon issued against redeemed. (M)
+- [ ] Move `PointsSourceRepository.countCheckinsForClubAtEvents` onto the new table
+  (members only, guests excluded by kind); acceptance test 6 must stay green. (S)
+- [ ] Web: online desk at `/portal/admin/events/:slug` (continuous camera via
+  `@zxing/browser`, green/amber/red full-screen confirm cards, per-outcome haptics,
+  name and phone lookup, coupon mode) and the stats board. (L)
+- [ ] Web: public registration form, and the calendar's RSVP control becoming a
+  registration action for `registrationRequired` events. (M)
+- [ ] Acceptance tests 1 to 9 from the design doc. (M)
+
+### Phase 2: safe at a venue without
+- [ ] `GET /events/:id/roster` snapshot with ETag and 304, carrying tokens, member
+  card `qrToken`, `phoneLast4` only (no full phones or emails on volunteer
+  devices). (M)
+- [ ] IndexedDB roster cache and scan queue, service worker flush with a foreground
+  fallback, offline badge and pending count. (L)
+- [ ] Offline conflict paths: own-replay by `clientId` returns success, another
+  device's win returns the amber result. (M)
+- [ ] Playwright offline test (design doc acceptance test 10). (S)
+
+### Later, after a real event has used it
+- [ ] Contract migration: drop `event_rsvps` and `event_checkins`, rename
+  `Event.rsvpOpen` to `registrationOpen`. Never bundled with the additive
+  migration. (S)
 
 ---
 
@@ -279,6 +333,8 @@ work rather than just appearance:
 2. Section 1a and 1c (dispatch, templates, announcements). Everything else that
    "notifies" stays silent until this lands.
 3. Section 2 and 5 (screens over existing APIs; fast wins, closes 15 placeholders).
+3a. Section 2A phase 1 (event registration and check-in desk), once its
+   implementation plan is written. Phase 2 follows after a real event.
 4. Section 6 then 7 (migration, cutover), with section 8 running alongside.
 5. Sections 3, 4 and 1b (effort/badges, DRR calendar, push). Spec marks
    gamification as the most deferrable.
