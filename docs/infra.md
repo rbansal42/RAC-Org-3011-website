@@ -492,6 +492,85 @@ above** — both `rbansal42/rac3011-api` and `rbansal42/rac3011-web` moved into
 `round-robin-solutions` the same day, with CI rewritten to Blacksmith and images now
 successfully pushed and pulled under the new org-owned paths.
 
+## CI/CD — self-hosted GitHub Actions runners on Oracle (2026-09-05)
+
+While the `rac3011-api`/`rac3011-web` stack is under active development, CI moved off
+Blacksmith (hosted ARM64 runners, metered quota) onto two self-hosted GitHub Actions
+runners on the same Oracle box that hosts prod, to stop burning Blacksmith minutes
+during the churn phase. Org-level runner registration was not possible (the `gh` token
+in use lacks `admin:org`), so this is **repo-level**, one runner per repo.
+
+### Runners
+
+| Repo | Runner name | Labels | systemd unit |
+|---|---|---|---|
+| `round-robin-solutions/rac3011-web` | `oracle-rac3011-web` | `self-hosted, Linux, ARM64, oracle` | `/etc/systemd/system/actions.runner.round-robin-solutions-rac3011-web.oracle-rac3011-web.service` |
+| `round-robin-solutions/rac3011-api` | `oracle-rac3011-api` | `self-hosted, Linux, ARM64, oracle` | `/etc/systemd/system/actions.runner.round-robin-solutions-rac3011-api.oracle-rac3011-api.service` |
+
+- Runner package: official `actions/runner` v2.337.0, `actions-runner-linux-arm64-2.337.0.tar.gz` — **native** ARM64, no QEMU. Oracle is `aarch64` (4 vCPU / 23 GB RAM), so this is a straight architecture match; the old OVH-VPS-era attempts at ARM builds needed QEMU emulation and OOM'd around a 6 GB heap ceiling — that problem class doesn't exist here.
+- Installed under a dedicated **`ghrunner`** user (`useradd -m -s /bin/bash ghrunner`), **not** `ubuntu`. `ghrunner` is a member of the `docker` group only — **no sudo** (`sudo -l -U ghrunner` → "not allowed to run sudo"). This is deliberate: the runner shares a host with production, so it gets exactly the one privilege (`docker` group, to build/push images) it needs and nothing else.
+- Runner install dirs: `/home/ghrunner/actions-runner-rac3011-web/` and `/home/ghrunner/actions-runner-rac3011-api/`, each with its own `_work` directory. Both are entirely outside `/etc/dokploy` and outside any Docker volume mount used by a running app — confirmed by inspection, no shared path with prod app data.
+- Both services are `systemctl enable`d (symlinked into `multi-user.target.wants`) and were `active (running)` at verification time — they survive reboot.
+- Runner concurrency is 1 job at a time per runner (the GitHub Actions self-hosted default — a single `Runner.Listener` processes one job, then picks up the next). Since it's one runner per repo, at most 2 builds can run concurrently on the box (one per repo), never more.
+
+### Registering / re-registering (tokens expire in ~1 hour)
+
+Registration tokens are short-lived; mint a fresh one right before use:
+
+```bash
+TOKEN=$(gh api -X POST repos/round-robin-solutions/<repo>/actions/runners/registration-token --jq .token)
+ssh oracle "sudo -u ghrunner bash -c 'cd /home/ghrunner/actions-runner-<repo> && ./config.sh --url https://github.com/round-robin-solutions/<repo> --token $TOKEN --name oracle-<repo> --labels self-hosted,linux,ARM64,oracle --work _work --unattended --replace'"
+```
+
+To reinstall the systemd unit after re-registering (only needed if the unit itself is missing, `config.sh --replace` alone is enough for a token refresh):
+
+```bash
+ssh oracle "sudo bash -c 'cd /home/ghrunner/actions-runner-<repo> && ./svc.sh install ghrunner && ./svc.sh start'"
+```
+
+Check runner status: `gh api repos/round-robin-solutions/<repo>/actions/runners --jq '.runners[]'` (should show `status: "online"`), or on the box: `systemctl status actions.runner.round-robin-solutions-<repo>.oracle-<repo>.service`.
+
+### Workflow changes (`.github/workflows/ci.yml`, both repos)
+
+- `runs-on: blacksmith-4vcpu-ubuntu-2404-arm` → `runs-on: [self-hosted, linux, ARM64, oracle]`
+- `useblacksmith/setup-docker-builder@v1` → `docker/setup-buildx-action@v3`
+- `useblacksmith/build-push-action@v2` → `docker/build-push-action@v6`
+- `platforms: linux/arm64` kept as-is — now genuinely native (no QEMU) since the runner itself is `aarch64`
+- Image tags, GHCR login, build-args (`VITE_API_ORIGIN`, `VITE_SENTRY_DSN`, `VITE_VAPID_PUBLIC_KEY`, `VITE_BUILD_SHA`), and the `concurrency` block (including `cancel-in-progress: ${{ github.event_name == 'push' }}` on web, so a content-publish `workflow_dispatch` rebuild is never cancelled by an in-flight push build) are unchanged.
+- **`DOKPLOY_BASE_URL` repo variable changed** (both repos) from `https://dokploy2.rbansal.xyz` (the broken public dashboard hostname — see "Dokploy (Oracle)" section above) to `http://127.0.0.1:3000`. This only works now *because* the runner itself lives on the Oracle box — the deploy step is a plain `curl` from that runner's shell, so `127.0.0.1:3000` reaches Dokploy's API directly, sidestepping the broken public hostname entirely. This is the fix for the standing "deploy step 404s every run" bug: a build could succeed and push an image, but the redeploy call never reached Dokploy, so the live site never actually updated.
+- **New step — force-fresh pull before redeploy.** Docker was reusing a cached `:main` layer and Dokploy would silently redeploy stale code (a repeat problem for this project). Added, right before the `application.redeploy` call:
+  ```bash
+  docker rmi -f "$IMAGE" || true
+  echo "$GHCR_PULL_TOKEN" | docker login ghcr.io -u rbansal42 --password-stdin
+  docker pull "$IMAGE"
+  docker logout ghcr.io
+  ```
+  **Real bug found and fixed on the first live run.** The obvious first attempt — just `docker pull "$IMAGE"` reusing the same `docker/login-action@v3` session (GITHUB_TOKEN) that `build-push-action` had just used to push — fails every time with `unauthorized` (api) / `denied` (web). This is **not** a transient GHCR propagation-lag issue: a 5-attempt/10s-backoff retry loop was tried first and failed identically on all 5 attempts, back to back, on both repos. The `GITHUB_TOKEN` can evidently push new versions of this org-owned package but is denied a plain pull of it — some combination of the org's package-level Actions-access settings and this token's actual scope, not chased down further since a known-good credential already existed. Fix: log in for this one step with the same PAT already used elsewhere on this Oracle box to pull these exact images (`registryId 3xV9hoh-urh0mGgtP-FBf` / `FGF2Vl6Tpyerbq_MQQjCb`, "GHCR rbansal42" in Dokploy, username `rbansal42`) — manually verified working on the box before wiring it into the workflow, stored as the `GHCR_PULL_TOKEN` repo secret in both repos (not inlined). Push itself (via `docker/login-action@v3` + GITHUB_TOKEN + `build-push-action@v6`) is untouched and keeps working exactly as before.
+- **Second real bug found and fixed, same session.** Once the pull step worked, the very next step (`application.saveDockerProvider`) started 400ing: `Input validation failed` — `username`, `password`, `registryUrl` all "expected nonoptional, received undefined". The original call only ever sent `{applicationId, dockerImage}`; this was **silently broken before too**, just masked by the `DOKPLOY_BASE_URL` 404 that always failed first. Checked the app's actual stored config via `application.one` — all three apps (`rac3011-api`, `rac3011-worker`, `rac3011-web`) already have `username: rbansal42`, `password: gho_...` (same PAT as above), `registryUrl: ghcr.io` saved directly on the application record. Fix: send those same three fields in the `saveDockerProvider` payload (sourced from the same `GHCR_PULL_TOKEN` secret + a literal `rbansal42`/`ghcr.io`), matching what was already configured — no credential change, just completing the payload Dokploy's schema requires.
+- The deploy step still calls `application.saveDockerProvider` then `application.redeploy` (not a raw `docker service update`, which would lose Dokploy's env injection), using the existing `DOKPLOY_API_KEY` repo secret — untouched.
+
+### Security notes
+
+- Both workflows trigger **only** on `push` to `main` and `workflow_dispatch` — there is **no `pull_request` trigger**, and that must stay true. Adding a fork-PR trigger later would let untrusted, unreviewed code execute directly on this production host (build steps run arbitrary `Dockerfile`/`RUN` content with the `ghrunner` user's `docker` group privileges). If PR-based CI is ever wanted, it needs to run somewhere else (Blacksmith/GitHub-hosted) or be restricted to `pull_request_target` with manual approval gates — do not wire self-hosted runners to untrusted-PR triggers.
+- `ghrunner` has no sudo of any kind — only `docker` group membership, which is sufficient for `docker build`/`push`/`pull`/`rmi` and nothing else.
+- Runner work directories are private to `ghrunner` (`/home/ghrunner`, mode `750`), disjoint from `/etc/dokploy` and every app's Docker volumes.
+
+### Falling back to Blacksmith
+
+If the self-hosted runners need to be taken out of the loop (e.g. Oracle box under real load, or runner needs maintenance), revert `runs-on:` in both `ci.yml` files back to `blacksmith-4vcpu-ubuntu-2404-arm` and swap the two `docker/*` actions back to `useblacksmith/setup-docker-builder@v1` / `useblacksmith/build-push-action@v2` (the previous commit before this section's changes has the exact prior content). The `DOKPLOY_BASE_URL` var would also need to revert to a reachable public hostname (`127.0.0.1` only resolves from Oracle itself) — or the deploy step's `if: vars.DOKPLOY_BASE_URL != ''` guard will just skip it, same as it silently did before this fix (build succeeds, image pushed, deploy step no-ops).
+
+### Left on Blacksmith / not touched
+
+Nothing else in either repo's CI was moved — only the `deploy`/`image` job's `runs-on` and the two build/push actions. No other workflows exist in either repo. No other app on the Oracle box (racddl, healing-pouch, house-of-urve, bliss, rotaract-os, snappile/photodump-server, etc.) was touched, and no other Cloudflare zone was touched.
+
+### Resource contention observed (2026-09-05, live verification session)
+
+Four other agents were pushing features to both repos concurrently while this was verified — a real, unplanned stress test. Observed on Oracle during single-build windows: load average peaked around **58-67** briefly during the very first cold build (apt-get installing Playwright/Chromium's ~20 dependency packages, mostly disk-I/O-bound — `vmstat`/`iostat` during the peak showed `%idle` around 60-65%, not CPU-saturated), settling back under 10 within about a minute each time. During a window where **both repos' runners were building simultaneously plus multiple queued/superseded builds from the concurrent agents**, load briefly hit **80.19** (5-minute load average, 4 vCPUs) before decaying to the 25-45 range over the next few minutes. Available memory never dropped below **~11-12 GB** (of 23 GB) at any point — page cache absorbs npm/docker layer I/O, nothing swapped.
+
+**Production impact: none observed.** `testing.rotaract3011.org`, `api.rotaract3011.org/health`, and (as an unrelated-app control) `racddl.com` were curled repeatedly through every load spike, including at the 80.19 peak — every response was `200` in 130-360ms, no slowdowns, no errors, no timeouts.
+
+**Runner concurrency is already 1 job per runner** (the GitHub Actions self-hosted default), so the load driver here was multiple *different* runners (one per repo, up to 2 total) plus overlapping queued jobs from the unusually high push rate during this session, not any misconfiguration. No throttling (`nice`, cgroup limits, concurrency changes) was added — the observed numbers didn't justify it, and constraining further would just slow down the very iteration speed this move was meant to protect. If sustained multi-repo concurrent load ever does start affecting prod latency, the lever to pull is capping to one runner active at a time (stop one systemd unit) rather than touching the (already-correct) per-repo concurrency-group config in the workflows.
+
 ## Verification summary
 
 | Check | Result |
@@ -531,3 +610,19 @@ start of the tunnel task) and both `api.` and `testing.` DNS records are no long
 | `cf-cache-status: HIT` on 2nd `GET /public/home` | OK — tunnel does not break edge caching |
 | CORS from `testing.` origin against `api.` | OK, correct `access-control-allow-origin`/`-credentials` |
 | Cold/warm latency vs baseline | Modest real improvement, cold-request variance eliminated (see measurement table above) |
+
+**Update 2026-09-05 (CI/CD self-hosted runners)**: verified live, with 4 other agents
+pushing features to both repos concurrently throughout.
+
+| Check | Result |
+|---|---|
+| Both repo-level runners registered + `systemctl enable`d | OK, `online` in `gh api .../actions/runners`, active at verification time |
+| Job actually ran on self-hosted runner (not Blacksmith) | OK, `runner_name: oracle-rac3011-web` / `oracle-rac3011-api` confirmed via `gh api .../jobs` |
+| Native arm64 build (no QEMU) | OK, `docker/setup-buildx-action@v3` log shows `OS/Arch: linux/arm64`, single-platform build |
+| GHCR pull fix (`GHCR_PULL_TOKEN`) | OK after 2 iterations — first attempt (retry loop on the GITHUB_TOKEN session) failed consistently (`unauthorized`/`denied`, all 5 attempts, ruling out propagation lag); switching to the known-good PAT fixed it on the next run |
+| `saveDockerProvider` 400 fix | OK after finding it was **also** broken pre-existing (masked by the old 404), fixed by sending `username`/`password`/`registryUrl` matching what `application.one` showed already saved on each app |
+| Deploy step (`application.redeploy`) succeeded, not 404/400 | OK, both repos, full step list `success` end to end |
+| Live content verification (not just HTTP 200) | OK — Dokploy `deployment.all` records match the exact commit SHA of each CI run (`384d048...` web, `5fc83bd...` api/worker), containers recreated within seconds of the deploy call (`docker service ps` shows `Running N seconds ago`) |
+| Web prerender still works on this runner | OK, build log: `[prerender] 18/18 public routes prerendered.` |
+| Resource contention under real concurrent load | Peaked at load average 80.19 (4 vCPU) during overlapping builds across both repos plus the concurrent agents' churn; self-hosted-runner default of 1 job/runner was not changed; production (`testing.`, `api.`, and unrelated `racddl.com` as a control) stayed 200 OK at 130-360ms throughout every spike, memory never dropped below ~11 GB free |
+| Left on Blacksmith | Nothing — both repos' only CI workflow moved fully to self-hosted; revert instructions above if ever needed |
