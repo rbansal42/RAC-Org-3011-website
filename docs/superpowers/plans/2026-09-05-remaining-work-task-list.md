@@ -93,16 +93,28 @@ template exists.
 - [ ] Prune subscriptions on 404/410 from the push service. (S)
 
 ### 1c. Announcements (spec §6.W)
-- [ ] API: `GET /announcements` (feed for caller, marks `AnnouncementRead`),
+- [x] API: `GET /announcements` (feed for caller, marks `AnnouncementRead`),
   `POST /announcements` (`announcements:send`, club-scoped for presidents;
   `announcements:send_all` for district-wide), `POST /announcements/audience/estimate`. (M)
-- [ ] Audience resolver per spec §6.6: roles ∩ zones/clubs ∪ explicit members;
-  empty audience is 400. President targeting another club is 403. (M)
+  DONE 2026-09-05 (`rac3011-api` PR #3, `4b97b2d`, merged+deployed).
+- [x] Audience resolver per spec §6.6: roles ∩ zones/clubs ∪ explicit members;
+  empty audience is 400. President targeting another club is 403. (M) DONE
+  2026-09-05, same PR. Code review before merge found and fixed two real bugs:
+  a zoneIds scope-escalation (a club-scoped sender's own club always overlaps
+  its zone, so any zoneIds audience bypassed the scope check — fixed to
+  require the whole zone be in scope) and a cross-dimension gap (a club-scoped
+  role grant never matched a zoneIds query and vice versa — fixed to expand
+  each grant to both dimensions). 11 e2e tests, including regression coverage
+  for both.
 - [ ] Web: `/portal/announcements` member feed (replaces ComingSoon). (S)
 - [ ] Web: `/portal/admin/announcements` compose + `/portal/admin/announcements/audience`
-  builder with live estimate (replaces two ComingSoon routes). (M)
+  builder with live estimate (replaces two ComingSoon routes). (M) **Builder gotcha**:
+  per spec §6.6 the resolver is `(roleKeys holders) ∩ (zones/clubs)`, so clubIds/zoneIds
+  alone select nobody — roleKeys is effectively required for the audience to reach
+  anyone. The builder should make this a validation error or a visible warning, not a
+  silent zero-recipient send.
 - [ ] Club dashboard "announcements" panel reads the real feed. (S)
-- [ ] Acceptance test #11. (S)
+- [x] Acceptance test #11. (S) DONE 2026-09-05, part of the API PR above.
 
 ---
 
