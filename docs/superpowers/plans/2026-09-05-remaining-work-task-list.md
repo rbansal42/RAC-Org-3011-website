@@ -1,0 +1,284 @@
+# Remaining work: task list (2026-09-05)
+
+Everything the District 3011 platform still needs before it matches the master
+spec and can replace the Vercel site. Compiled by comparing the spec
+(`2026-09-04-website-master-spec.md`, `2026-09-04-implementation-spec.md`) against
+the code in `rac3011-api` and `rac3011-web` at commits `d9094b7` / `217653e`, the
+live testing deployment, and the production DNS. Supersedes the status table in
+`2026-09-04-feature-inventory-and-tasks.md`.
+
+Legend: **S** under half a day · **M** one to two days · **L** three days or more.
+"API done" means the endpoints exist and are e2e-tested; only the screen is missing.
+
+What is already complete and not repeated below: spec build-order steps 0 to 7,
+12 and 13 (scaffolds, auth, RBAC, public site, CMS and settings, reporting, points,
+members, showcase, and all five subdomains), plus the 15-minute and daily
+`pg_dump` cron jobs on Oracle.
+
+---
+
+## 0. Urgent: fix before anything else
+
+- [ ] **Wire real email behind `NotificationPort`.** (M) `NotificationsModule` binds
+  the port to `ConsoleNotificationAdapter`, so every notification, including the
+  login OTP, is only written to the container log. The `EmailProviderPool` with
+  four transports exists and is unit-tested but nothing calls it. Login in
+  production works only because of the temporary bypass code.
+- [ ] **Remove `GLOBAL_OTP=424242`** from the production API env once the item above
+  is live and a real OTP email has been received end to end. (S)
+- [ ] **Production project subdomains return HTTP 525.** (S) `mission3011.`,
+  `drishti.`, `rcl.`, `careerbridge.` and `ride.rotaract3011.org` resolve to
+  Cloudflare-proxied IPs with no working origin certificate, so anyone who types
+  those URLs today gets a Cloudflare error page. Either point them at Oracle now
+  (same pattern as `testing.*`) or remove the records until cutover.
+- [ ] **Purge the 14 fake Drishti patient records** on Rahul's word. They read like
+  real people with real phone numbers. (S)
+- [ ] **Privacy policy and terms of service** real text (content from Rahul, see
+  `content-needed-for-launch.md`). Legal basis for holding member PII; the member
+  directory is already live behind login. (S once text arrives)
+
+---
+
+## 1. Spec step 9: notifications, push, announcements (largest gap)
+
+Schema exists (`NotificationOutbox`, `PushSubscription`, `Announcement`,
+`AnnouncementRead`, `EmailProviderUsage`). Nothing writes to the outbox and no
+template exists.
+
+### 1a. Dispatch and outbox
+- [ ] `NotificationDispatchService` implementing `NotificationPort`: resolve
+  `userId` recipients to emails and push subscriptions, render template, insert
+  one outbox row per recipient per channel, enqueue `notifications.send`. (M)
+- [ ] BullMQ `notifications.send` processor in the worker process (`WORKER=1`):
+  email via `EmailProviderPool`, push via `web-push`; record `provider` on the
+  outbox row; retry with backoff; dead-letter after N attempts. (M)
+- [ ] Template registry `src/notifications/templates/<key>.ts` exporting
+  `subject`, `html`, `text`, `push`. All 26 keys from spec §7: `otp`,
+  `member-registered`, `member-approved`, `member-rejected`, `report-queried`,
+  `report-replied`, `report-scored`, `showcase-submitted`, `showcase-published`,
+  `showcase-rejected`, `announcement`, `feedback-replied`, `booking-requested`,
+  `booking-confirmed`, `booking-declined`, `booking-reminder`, `link-broken`,
+  `event-reminder`, `enquiry-received`, `listing-verify`, `listing-verified`,
+  `camp-submitted`, `camp-approved`, `ride-host-assigned`,
+  `contribution-approved`, `certificate-issued`. (L)
+- [ ] Recipient rewrite for non-production (`recipient-rewrite.ts` exists) verified
+  so testing never emails real members. (S)
+- [ ] Audit every existing `.notify()` call site (auth, enquiries, feedback,
+  link-health, members, imports, reports, showcase, careerbridge, mission3011,
+  ride) passes the data each template needs. (S)
+- [ ] Add the missing triggers: `event-reminder` (24h before RSVP going, cron),
+  `report-scored`, `feedback-replied`, `drishti` and `rcl` have none and may not
+  need any; confirm. (M)
+- [ ] Wire Oracle Email Delivery credentials, Resend, Mailgun and Gmail SMTP in
+  the production env; verify daily-cap failover with acceptance tests #12 and #19. (M)
+
+### 1b. Web push
+- [ ] `POST /me/push-subscriptions` and `DELETE`, VAPID keys in env
+  (`VAPID_*` already declared). (S)
+- [ ] Service worker in `rac3011-web/public/sw.js` handling `push` and
+  `notificationclick`; register from `App.tsx`. (M)
+- [ ] Wire the existing `PushPermissionSection` on `/portal/me/settings` to
+  actually subscribe and post the subscription; unsubscribe path. (S)
+- [ ] Prune subscriptions on 404/410 from the push service. (S)
+
+### 1c. Announcements (spec §6.W)
+- [ ] API: `GET /announcements` (feed for caller, marks `AnnouncementRead`),
+  `POST /announcements` (`announcements:send`, club-scoped for presidents;
+  `announcements:send_all` for district-wide), `POST /announcements/audience/estimate`. (M)
+- [ ] Audience resolver per spec §6.6: roles ∩ zones/clubs ∪ explicit members;
+  empty audience is 400. President targeting another club is 403. (M)
+- [ ] Web: `/portal/announcements` member feed (replaces ComingSoon). (S)
+- [ ] Web: `/portal/admin/announcements` compose + `/portal/admin/announcements/audience`
+  builder with live estimate (replaces two ComingSoon routes). (M)
+- [ ] Club dashboard "announcements" panel reads the real feed. (S)
+- [ ] Acceptance test #11. (S)
+
+---
+
+## 2. Spec step 8 leftovers: events, check-in, feedback screens (API done)
+
+- [ ] `/portal/admin/events` EventsAdmin CRUD screen (create/edit/delete
+  district events, capacity, RSVP toggle, cover image via AssetUrlField). (M)
+- [ ] `/portal/admin/events/:slug` EventCheckIn: camera QR via `@zxing/browser`
+  (dependency already installed, unused), manual member search, walk-in entry,
+  live per-club counts. (M)
+- [ ] `/portal/events` ClubEventTracker for `club_events:log` (club's own
+  non-district events, feeds attendance adapter). (M)
+- [ ] `/portal/feedback` member submit (general or event-scoped) and "mine" list. (S)
+- [ ] `/portal/admin/feedback` review queue: open/reviewed/closed, reply. (S)
+- [ ] `/portal/resources` member-side view of unlocked resources for the caller. (S)
+- [ ] `/portal/dashboard` role variants per spec §9.5: OfficerDashboard
+  (`reports:review`), ClubDashboard, MemberDashboard, DAC variant. Today it is one
+  page with permission-gated widgets. (M)
+- [ ] Calendar page: RSVP button state and "feedback after event" link on
+  `EventPage` verified against the real API once feedback UI exists. (S)
+
+---
+
+## 3. Spec step 10: effort log, contributions, badges, certificates
+
+Only tables exist (`EffortLog`, `Badge`, `MemberBadge`, `Certificate`).
+Permissions `effort:log` and `effort:approve` are seeded but unused.
+
+- [ ] Effort log API: `POST /effort` (member submits own hours), `GET /effort?mine`,
+  `GET /effort` (scoped list for officers), `PATCH /effort/:id` approve/reject
+  with discretionary points and reason, audited. (M)
+- [ ] Points adapter: approved effort points into `ClubPointEntry` under the
+  subjective category. (S)
+- [ ] `/portal/me/contributions` submit + status list (replaces ComingSoon). (S)
+- [ ] `/portal/admin/effort-log` approvals desk with points input (replaces
+  ComingSoon). (M)
+- [ ] Badge evaluators per spec §6.7: `first_project`, `events_10`, `events_25`,
+  `hours_25`, `hours_100`, `service_1y`, `service_3y`, `phf` (manual
+  `POST /members/:id/badges/phf`). Triggered on `showcase.published`,
+  `checkin.created`, `effort.approved`, nightly anniversaries job. (M)
+- [ ] Certificate issuance: pdfkit A4 landscape per spec (Montserrat, pink rule,
+  district logo, reference id), stored in R2 private tier, `certificate-issued`
+  notification. Auto-issue for `service_1y`, `service_3y`, `hours_100`. (M)
+- [ ] `/portal/me/certificates` list + download and `/portal/me/badges` (or
+  badges on the member card). (S)
+- [ ] Badges visible to own club's officers on the member detail view, never
+  cross-club. (S)
+
+---
+
+## 4. Spec step 11: DRR calendar
+
+Only tables exist (`DrrBlock`, `DrrBooking`). Public route is ComingSoon.
+Permission `drr_calendar:manage` is seeded but unused.
+
+- [ ] Google Calendar OAuth (service account or DRR's consent), freebusy client
+  with a fake for tests. (M)
+- [ ] Pure `slots.ts` per spec §6.3 using settings `drr.*` keys (seed them),
+  Asia/Kolkata, buffer, blackout dates, `unreachable` status on Google failure. (M)
+- [ ] API: `GET /drr-calendar/slots`, `POST /drr-calendar/bookings` (overlap → 409,
+  creates Google event, `booking-requested` to admins), `PATCH .../:id`
+  confirm/decline, `GET/POST/DELETE /drr-calendar/blocks`. (M)
+- [ ] `booking-reminder` cron 24h before confirmed bookings. (S)
+- [ ] Web: `/drr-calendar` (checking / unreachable states), `/drr-calendar/book/:slot`
+  form + confirmation with reference, `/drr-calendar/admin`. (M)
+- [ ] Acceptance test #13. (S)
+
+---
+
+## 5. Admin screens where the API already exists
+
+- [ ] `/portal/admin/roles`: roles list, create role (super admin), grant and
+  revoke permissions. API: `roles.controller`, `permissions.controller`. (M)
+- [ ] `/portal/admin/users`: search users, view held roles with scope, grant and
+  revoke scoped roles (`user-roles.controller`). (M)
+- [ ] `/portal/admin/audit`: filterable audit log viewer (`audit.controller`). (S)
+- [ ] Remove `ComingSoon` component and its 15 route usages once every screen
+  above exists; add a lint rule or test that fails on any remaining import. (S)
+
+---
+
+## 6. Legacy data migration completeness (blocks cutover)
+
+- [ ] `scripts/migrate-legacy.ts` per spec §3.4: `legacy_monthly_reports` →
+  `reports` (club resolution by email then name, month parse, `schema_version=1`,
+  queried status from `flag_reason`), `legacy_project_submissions` → `projects` +
+  lead `project_clubs` row, `legacy_announcements` → `announcements`. Unmatched
+  clubs to `scripts/out/unmatched-*.csv`, resolved via `club-aliases.json`. Only
+  `migrate-legacy-users.ts` exists today. (M)
+- [ ] TOTP secret carry-over for legacy users with `totp_secret` (flagged
+  incomplete by the step-1 build). (S)
+- [ ] Password reset email path for legacy users whose hash is not bcrypt. (S)
+- [ ] Dry-run the full migration against a fresh Postgres from the latest Supabase
+  export and diff row counts. (S)
+
+---
+
+## 7. Spec step 14: cutover and hardening
+
+### 7a. Domains and hosting
+- [ ] Decide origin path: Cloudflare Tunnel (spec §14.8, currently rolled back and
+  `cloudflared` inactive on Oracle) or DNS-only A records as `testing.*` uses. (decision)
+- [ ] Add production hostnames to the Oracle Dokploy web app (`rotaract3011.org`,
+  `www`, five subdomains) and API; issue certificates. (S)
+- [ ] Freeze Supabase writes, run legacy migration, reconcile rows changed since
+  2026-09-03. (S)
+- [ ] Flip `rotaract3011.org` DNS from Vercel to Oracle; keep `www` → apex redirect. (S)
+- [ ] Decommission the Vercel project and the `rbansal42/RAC-Org-3011-website`
+  Dokploy app on the VPS (`staging.rotaract3011.org` already 404s). (S)
+- [ ] Verify spec §14.7.4 live: `cf-cache-status: HIT` on second `/public/home`
+  request and p50 under 100 ms from India. (S)
+
+### 7b. Operational
+- [ ] Initialise Sentry in `main.ts` (dependency and `SENTRY_DSN` exist, never
+  called); web-side error reporting too. (S)
+- [ ] Rate limits on auth endpoints (`/auth/sign-in/email`, `/second-factor/*`,
+  `/members/register` already throttled; sign-in is not). (S)
+- [ ] Backups: confirm the Oracle cron uploads to `rac3011-backups` R2 or
+  `onedrive:Backup/RAC3011-15min/` as the spec says, 30-day retention, and run
+  one restore drill into a throwaway container. (S)
+- [ ] Confirm `STORAGE_DRIVER=live` with both UploadThing tokens and R2 keys in
+  the production API env (could not be read via the Dokploy API this session). (S)
+- [ ] `docs/runbook.md`: deploy, rollback, rotate secrets, restore backup, purge
+  cache, add a subdomain, add a lead club. (M)
+- [ ] Drop `user_profiles` and legacy text columns after cutover soak. (S)
+- [ ] Sitemap and robots: include the five subdomain hosts or serve per-host
+  sitemaps; submit to Search Console for the apex. (S)
+
+---
+
+## 8. Verification gaps
+
+- [ ] Spec §12 acceptance tests with no implementation yet: #11 (announcement
+  audience), #12 and #19 (email pool failover through the real port), #13 (DRR
+  booking). Re-audit #1 to #10, #14 to #18, #20 against `test/*.e2e.ts` titles and
+  fill any that are only partially asserted. (M)
+- [ ] RBAC e2e gaps noted during the subdomain review: RCL cross-club team
+  update denial (404), Career Bridge admin route with no permission (403). (S)
+- [ ] Lighthouse mobile ≥ 90 on Home, Map, Showcase (spec step 14); not run yet. (S)
+- [ ] Playwright coverage for every screen added in sections 1 to 5 at 390/768/1440
+  with axe, extending `e2e/mock-api.ts`. (ongoing)
+- [ ] The flaky BullMQ purge test in `test/cache.e2e.ts` (passes alone, fails under
+  load): fix the timing or isolate it. (S)
+- [ ] Web `e2e/mock-api.ts` contract drift: add a test that the mock's routes match
+  the OpenAPI document (`npm run typegen` source), so the login 404 class of bug
+  cannot recur. (S)
+
+---
+
+## 9. Polish and open decisions
+
+- [ ] Sweep for leftover `picsum.photos` and `example.org` URLs before launch
+  (5 demo markers in `/public/projects` alone today). (S)
+- [ ] Decision: report form field changes apply immediately or on a scheduled
+  cutover (open since the RBAC/CMS spec §C). (decision)
+- [ ] Decision: effective-dated role transitions (president change at RY end);
+  currently a manual revoke and grant. (decision, deferred by spec)
+- [ ] Decision: the "AI/innovation" SERIC requirement; chatbot ruled out, nothing
+  chosen. (decision)
+- [ ] Mobile app: out of scope now, but keep the OpenAPI document and cookie
+  auth compatible (`export-openapi.ts` exists). (note)
+
+---
+
+## 10. Content and decisions needed from Rahul
+
+Full detail is in `docs/content-needed-for-launch.md`. The items that gate code
+work rather than just appearance:
+
+- [ ] Lead club per subdomain (sets `subdomain.<key>.leadClubId` and grants
+  project admin automatically).
+- [ ] Wipe or keep each subdomain's demo data (camps, surgeries, teams, listings,
+  delegations).
+- [ ] Sponsor calculator ratios (`sponsor.ratios` setting) confirmed.
+- [ ] Routing for new-club, sponsor and contact enquiries (who receives
+  `enquiry-received`).
+- [ ] District public email, phone, social links for the contact page and footer.
+- [ ] Who moderates Career Bridge listings.
+
+---
+
+## Suggested order
+
+1. Section 0 (all five items).
+2. Section 1a and 1c (dispatch, templates, announcements). Everything else that
+   "notifies" stays silent until this lands.
+3. Section 2 and 5 (screens over existing APIs; fast wins, closes 15 placeholders).
+4. Section 6 then 7 (migration, cutover), with section 8 running alongside.
+5. Sections 3, 4 and 1b (effort/badges, DRR calendar, push). Spec marks
+   gamification as the most deferrable.

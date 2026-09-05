@@ -1,5 +1,7 @@
 # RAC District 3011 Platform — Feature Inventory & Task List
 
+> **Superseded 2026-09-05.** The status table below is stale (steps 2 to 8, 12 and 13 have since shipped). Current remaining work is tracked in `2026-09-05-remaining-work-task-list.md`.
+
 Companion to `docs/superpowers/specs/2026-09-04-implementation-spec.md` (the spec is
 authoritative for schema/routes/algorithms; this document is the feature-by-role
 inventory and the resulting task list, per Rahul's `/goal`: list features per
