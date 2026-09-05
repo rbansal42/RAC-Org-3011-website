@@ -108,11 +108,14 @@ template exists.
   for both.
 - [ ] Web: `/portal/announcements` member feed (replaces ComingSoon). (S)
 - [ ] Web: `/portal/admin/announcements` compose + `/portal/admin/announcements/audience`
-  builder with live estimate (replaces two ComingSoon routes). (M) **Builder gotcha**:
-  per spec §6.6 the resolver is `(roleKeys holders) ∩ (zones/clubs)`, so clubIds/zoneIds
-  alone select nobody — roleKeys is effectively required for the audience to reach
-  anyone. The builder should make this a validation error or a visible warning, not a
-  silent zero-recipient send.
+  builder with live estimate (replaces two ComingSoon routes). (M) **Business rule,
+  corrected 2026-09-05 by Rahul**: the original §6.6 reading (clubIds/zoneIds alone
+  select nobody without roleKeys) was wrong. Fixed in `rac3011-api` PR #4 (`a6affb1`):
+  `roleKeys` given → existing intersection (role holders ∩ those clubs/zones), unchanged;
+  `roleKeys` absent + `clubIds`/`zoneIds` given → every approved member of those
+  clubs/zones directly. `roleKeys` in the builder is now an optional narrowing filter,
+  not a required field — a club/zone picker alone is a valid, meaningful "everyone in
+  this club/zone" send.
 - [ ] Club dashboard "announcements" panel reads the real feed. (S)
 - [x] Acceptance test #11. (S) DONE 2026-09-05, part of the API PR above.
 
