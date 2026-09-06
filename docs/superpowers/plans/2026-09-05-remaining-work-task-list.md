@@ -106,9 +106,13 @@ template exists.
   role grant never matched a zoneIds query and vice versa — fixed to expand
   each grant to both dimensions). 11 e2e tests, including regression coverage
   for both.
-- [ ] Web: `/portal/announcements` member feed (replaces ComingSoon). (S)
-- [ ] Web: `/portal/admin/announcements` compose + `/portal/admin/announcements/audience`
-  builder with live estimate (replaces two ComingSoon routes). (M) **Business rule,
+- [x] Web: `/portal/announcements` member feed (replaces ComingSoon). (S) DONE 2026-09-05
+  (`rac3011-web` PR #1, `d599c5d`), verified on `main` 2026-09-06: `AnnouncementsFeedPage.tsx`
+  is wired into `portalMember.routes.tsx`, no ComingSoon left on that route.
+- [x] Web: `/portal/admin/announcements` compose + `/portal/admin/announcements/audience`
+  builder with live estimate (replaces two ComingSoon routes). (M) DONE 2026-09-05
+  (`rac3011-web` PR #1, `d599c5d`), verified on `main` 2026-09-06: `AdminAnnouncementsPage.tsx`,
+  `AnnouncementAudiencePage.tsx` and `components/announcements/AudienceBuilder.tsx` all live. **Business rule,
   corrected 2026-09-05 by Rahul**: the original §6.6 reading (clubIds/zoneIds alone
   select nobody without roleKeys) was wrong. Fixed in `rac3011-api` PR #4 (`a6affb1`):
   `roleKeys` given → existing intersection (role holders ∩ those clubs/zones), unchanged;
@@ -116,7 +120,9 @@ template exists.
   clubs/zones directly. `roleKeys` in the builder is now an optional narrowing filter,
   not a required field — a club/zone picker alone is a valid, meaningful "everyone in
   this club/zone" send.
-- [ ] Club dashboard "announcements" panel reads the real feed. (S)
+- [x] Club dashboard "announcements" panel reads the real feed. (S) DONE 2026-09-05
+  (`rac3011-web` PR #1, `d599c5d`), verified 2026-09-06: `DashboardPage.tsx` `AnnouncementsWidget`
+  calls `fetchAnnouncementFeed({ page: 1, pageSize: 3 })`.
 - [x] Acceptance test #11. (S) DONE 2026-09-05, part of the API PR above.
 
 ---
