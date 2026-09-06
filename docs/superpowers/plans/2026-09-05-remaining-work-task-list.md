@@ -249,11 +249,23 @@ Permission `drr_calendar:manage` is seeded but unused.
 
 ## 5. Admin screens where the API already exists
 
-- [ ] `/portal/admin/roles`: roles list, create role (super admin), grant and
-  revoke permissions. API: `roles.controller`, `permissions.controller`. (M)
-- [ ] `/portal/admin/users`: search users, view held roles with scope, grant and
-  revoke scoped roles (`user-roles.controller`). (M)
-- [ ] `/portal/admin/audit`: filterable audit log viewer (`audit.controller`). (S)
+- [x] `/portal/admin/roles`: roles list, create role, grant and
+  revoke permissions. API: `roles.controller`, `permissions.controller`. (M) DONE 2026-09-06
+  (`rac3011-web` branch `admin-rbac-screens`, `b63a7bb`). Note: the "(super admin)" qualifier was
+  deliberately NOT implemented as a frontend check. Spec 4.8.5 says `super_admin` is a role, not a
+  code path, and 4.8.6 says the frontend never enforces, so the create control is gated on the same
+  `roles:manage` route guard as the rest of the screen and the API remains the boundary.
+- [x] `/portal/admin/users`: search users, view held roles with scope, grant and
+  revoke scoped roles (`user-roles.controller`). (M) DONE 2026-09-06 (`26e2060`, `c6c5b8f`, `c66166f`).
+  There is no `GET /users` endpoint, so user discovery goes through `GET /members` (whose DTO exposes
+  `userId`) plus a pasted-user-id fallback for users with no member row. **This screen surfaced a real
+  backend bug**: `GET /user-roles?filter[userId]=` was silently ignored under express 5's `simple`
+  query parser, returning every grant in the district, which would have made Revoke delete another
+  member's role. Fixed separately in `rac3011-api` branch `fix/user-roles-userid-filter` (`c8b8f3f`,
+  regression test proven to fail pre-fix); the screen also filters client-side as defence in depth.
+- [x] `/portal/admin/audit`: filterable audit log viewer (`audit.controller`). (S) DONE 2026-09-06
+  (`4ff97fa`). `actorId` renders raw because the audit API exposes no actor name; enriching it is an
+  api-repo change, logged as a follow-up rather than done here.
 - [ ] Remove `ComingSoon` component and its 15 route usages once every screen
   above exists; add a lint rule or test that fails on any remaining import. (S)
 
@@ -370,3 +382,22 @@ work rather than just appearance:
 4. Section 6 then 7 (migration, cutover), with section 8 running alongside.
 5. Sections 3, 4 and 1b (effort/badges, DRR calendar, push). Spec marks
    gamification as the most deferrable.
+
+---
+
+## Follow-ups opened 2026-09-06 (from the section 5 build)
+
+- [ ] **Frontend super-admin code path (spec 4.8.5 violation, pre-existing).**
+  `rac3011-web/src/lib/permissions.ts:17` short-circuits `can()` to true when
+  `roleKey === 'super_admin'`. Dates to `4e90966`, not introduced by the section 5 work, and the API
+  still enforces so it is not exploitable. But it is exactly the frontend super-admin check the spec
+  forbids, and section 5's screens are the highest-value ones it unlocks. (S)
+- [ ] **Create-role inline validation messages are unreachable.** `AdminRolesPage.tsx`
+  `CreateRoleModal` disables Submit using the same predicate `submit()` uses, and `submit()` is the
+  only caller of `setKeyError`/`setNameError`, so the inline field errors never render. A super admin
+  typing a 1-char key gets a dead button with no explanation. Invalid input still cannot be
+  submitted. (S)
+- [ ] **Audit log shows raw `actorId` UUIDs.** Enrich `GET /audit` with an actor name (or add a bulk
+  user-lookup endpoint) so the audit viewer is readable. (S, api + web)
+- [ ] **No `GET /users` search.** `/portal/admin/users` reaches users through their member record
+  plus a pasted-id fallback, so a user with no member row is only reachable by id. (S, api)
